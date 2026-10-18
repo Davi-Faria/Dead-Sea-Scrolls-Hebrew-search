@@ -12,7 +12,7 @@ The text comes from the [CACCHT Dead Sea Scrolls dataset](https://github.com/ETC
 You need Python 3.8 or newer.
 
 ```
-git clone <this repository>
+git clone <https://github.com/Davi-Faria/Dead-Sea-Scrolls-Hebrew-search.git>
 cd dss-hebrew-search
 python serve.py
 ```
