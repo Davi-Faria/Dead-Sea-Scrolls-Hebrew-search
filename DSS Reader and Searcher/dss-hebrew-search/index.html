@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dead Sea Scrolls Hebrew search</title>
+  <meta name="description" content="Search the Hebrew and Aramaic text of the Dead Sea Scrolls by word, lexeme or pattern.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Dead Sea Scrolls Hebrew search</h1>
+    <p>Look up a word in the transcribed Hebrew and Aramaic text of the scrolls. Vowel points and final letters are ignored, so עין finds עיני.</p>
+  </header>
+
+  <main>
+    <form id="search-form" autocomplete="off">
+      <div class="query">
+        <label for="q">Hebrew word</label>
+        <div class="query-row">
+          <input id="q" type="text" dir="rtl" lang="he" spellcheck="false" placeholder="עין" disabled>
+          <button type="submit" class="primary" disabled>Search</button>
+        </div>
+      </div>
+
+      <details class="keyboard">
+        <summary>Hebrew keyboard</summary>
+        <div id="keys" dir="rtl" lang="he"></div>
+      </details>
+
+      <div class="options">
+        <div class="field">
+          <label for="mode">Match</label>
+          <select id="mode" disabled>
+            <option value="exact">Whole word</option>
+            <option value="prefixes">Whole word, with prefixes (ו ה ב כ ל מ ש)</option>
+            <option value="lexeme">Lexeme (all forms of the word)</option>
+            <option value="starts">Starts with</option>
+            <option value="ends">Ends with</option>
+            <option value="contains">Contains</option>
+            <option value="regex">Regular expression</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="corpus">Texts</label>
+          <select id="corpus" disabled>
+            <option value="nonbib">Non-biblical scrolls</option>
+            <option value="bib">Biblical scrolls</option>
+            <option value="all">All scrolls</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="scrolls">Scrolls</label>
+          <input id="scrolls" type="text" spellcheck="false" placeholder="all, or e.g. 1QS, CD, 4Q4*" disabled>
+        </div>
+        <div class="field">
+          <label for="lang">Language</label>
+          <select id="lang" disabled>
+            <option value="any">Hebrew and Aramaic</option>
+            <option value="h">Hebrew</option>
+            <option value="a">Aramaic</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ctx">Words of context</label>
+          <input id="ctx" type="number" min="0" max="30" value="6" disabled>
+        </div>
+      </div>
+    </form>
+
+    <p id="status" role="status" aria-live="polite">Loading the scroll data…</p>
+
+    <section id="summary" hidden>
+      <h2 id="summary-title"></h2>
+      <details id="by-scroll">
+        <summary>Hits by scroll</summary>
+        <ul id="scroll-list"></ul>
+      </details>
+      <button type="button" id="csv">Download all hits as CSV</button>
+    </section>
+
+    <ol id="results"></ol>
+    <button type="button" id="more" hidden>Show more</button>
+  </main>
+
+  <footer class="page-foot">
+    <details>
+      <summary>How to read the results</summary>
+      <ul>
+        <li>The highlighted word is the hit; the words around it come from the same scroll fragment. A <span class="legend-br">/</span> marks the end of a line.</li>
+        <li><span class="rec">Faded in brackets</span>: reconstructed by an editor. <span class="rec-part">Dotted underline</span>: partly reconstructed. <span class="unc">Wavy underline</span>: uncertain letters. <span class="rem">Struck through</span>: removed by an editor. <span class="cor">Solid underline</span>: corrected.</li>
+        <li>The dataset writes prefixes (ו ה ב כ ל מ ש) as separate units; this page joins them to the word they belong to. A lexeme search uses the dataset’s own lexeme for each word, so it finds every inflected form.</li>
+        <li>References are scroll, fragment or column, and line, as numbered in the dataset. They can differ by a line from printed editions, so check before you cite.</li>
+        <li>Regular expressions run on the consonants only, with final letters changed to ordinary ones (ן → נ). Final letters in your pattern are changed the same way. For example, <code>^[והבלמ]?עינ</code> finds words that begin with an optional prefix and then עין.</li>
+      </ul>
+    </details>
+    <p id="source"></p>
+  </footer>
+
+  <script src="search.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

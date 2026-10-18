@@ -1,0 +1,206 @@
+/* Dead Sea Scrolls Hebrew search - styles.
+   Colors are tokens on :root, with dark values for dark-mode browsers. */
+
+:root {
+  color-scheme: light dark;
+  --paper: #f3f6f6;
+  --ink: #1b2a2d;
+  --muted: #5a6b6e;
+  --rule: #d3dcdd;
+  --field: #ffffff;
+  --accent: #0e5d73;
+  --accent-ink: #ffffff;
+  --hit-bg: #ffe28a;
+  --hit-ink: #2a2000;
+  --warn: #b4531a;
+
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --hebrew: "SBL Hebrew", "Ezra SIL", "Noto Serif Hebrew", "Frank Ruhl Libre", "Cardo", "Times New Roman", serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121b1d;
+    --ink: #e3ebea;
+    --muted: #93a5a8;
+    --rule: #2b3b3e;
+    --field: #19262a;
+    --accent: #6fc3d6;
+    --accent-ink: #08181c;
+    --hit-bg: #6b5513;
+    --hit-ink: #fff0b8;
+    --warn: #f0a46c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--paper); }
+
+body {
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  max-width: 62rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: 1rem/1.55 var(--ui);
+}
+
+h1 { margin: 0 0 .35rem; font-size: 1.6rem; line-height: 1.25; font-weight: 650; }
+h2 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: 650; }
+p { margin: 0 0 .75rem; }
+.page-head p { max-width: 42rem; color: var(--muted); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- form ---- */
+
+label { display: block; margin-bottom: .25rem; font-size: .875rem; color: var(--muted); }
+
+input, select, button {
+  font: inherit;
+  color: inherit;
+}
+
+input[type="text"], input[type="number"], select {
+  width: 100%;
+  padding: .45rem .6rem;
+  background: var(--field);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+input:disabled, select:disabled, button:disabled { opacity: .55; cursor: not-allowed; }
+
+.query { margin: 1.5rem 0 .5rem; }
+.query-row { display: flex; gap: .5rem; }
+
+#q {
+  flex: 1;
+  font-family: var(--hebrew);
+  font-size: 1.6rem;
+  line-height: 1.3;
+  padding: .3rem .7rem;
+}
+
+button {
+  padding: .45rem .9rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  padding-inline: 1.4rem;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: .75rem 1rem;
+  margin-top: .75rem;
+}
+
+details > summary { cursor: pointer; color: var(--muted); font-size: .9rem; width: fit-content; }
+details[open] > summary { margin-bottom: .5rem; }
+
+.keyboard { margin-top: .25rem; }
+#keys { display: flex; flex-wrap: wrap; gap: .3rem; max-width: 36rem; }
+#keys button {
+  min-width: 2.4rem;
+  padding: .15rem .4rem;
+  font-family: var(--hebrew);
+  font-size: 1.3rem;
+  line-height: 1.4;
+}
+
+/* ---- status and summary ---- */
+
+#status { margin-top: 1.25rem; color: var(--muted); }
+#status.error { color: var(--warn); }
+#status .suggestions { display: inline-flex; flex-wrap: wrap; gap: .3rem; margin-inline-start: .4rem; vertical-align: middle; }
+#status .suggestions button { font-family: var(--hebrew); font-size: 1.1rem; padding: .05rem .5rem; }
+
+#summary { margin: 1rem 0 .5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+#summary button { margin-top: .75rem; }
+
+#scroll-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#scroll-list button {
+  padding: .1rem .55rem;
+  font-size: .875rem;
+  margin: 0;
+}
+#scroll-list .count { margin-inline-start: .35rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- results ---- */
+
+#results { margin: 0; padding: 0; list-style: none; }
+
+.hit {
+  display: grid;
+  grid-template-columns: 11.5rem 1fr;
+  gap: .25rem 1.25rem;
+  padding: .7rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.ref { font-size: .9rem; }
+.ref-id { display: block; font-weight: 650; font-variant-numeric: tabular-nums; }
+.ref-name, .ref-bible, .ref-lexeme { display: block; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.ref-lexeme { font-family: var(--hebrew); font-size: .95rem; }
+
+.text {
+  margin: 0;
+  font-family: var(--hebrew);
+  font-size: 1.3rem;
+  line-height: 1.75;
+  text-align: start;
+}
+
+mark {
+  padding: 0 .2em;
+  border-radius: 2px;
+  background: var(--hit-bg);
+  color: var(--hit-ink);
+}
+
+.br, .legend-br { color: var(--muted); padding: 0 .2em; }
+
+/* Editorial marks: see "How to read the results" */
+.rec { color: var(--muted); }
+.rec::before { content: "["; }
+.rec::after { content: "]"; }
+.rec-part { border-bottom: 1px dotted currentColor; }
+.unc { text-decoration: underline wavy var(--warn); text-underline-offset: .22em; }
+.cor { border-bottom: 1px solid var(--accent); }
+.rem { text-decoration: line-through; }
+
+#more { display: block; margin: 1rem 0 0; }
+
+/* ---- footer ---- */
+
+.page-foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: .875rem; color: var(--muted); }
+.page-foot ul { max-width: 46rem; padding-inline-start: 1.2rem; }
+.page-foot li { margin-bottom: .4rem; }
+.page-foot a { color: var(--accent); }
+.page-foot code { font-size: .9em; }
+
+@media (max-width: 40rem) {
+  .hit { grid-template-columns: 1fr; }
+  .ref-id, .ref-name, .ref-bible, .ref-lexeme { display: inline; margin-inline-end: .6rem; }
+  .query-row { flex-wrap: wrap; }
+  #q { min-width: 0; }
+}
