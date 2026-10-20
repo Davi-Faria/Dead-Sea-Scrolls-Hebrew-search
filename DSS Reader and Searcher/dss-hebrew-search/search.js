@@ -1,5 +1,5 @@
 /*
- * search.js - the search logic, with no dependence on the page.
+ * search.js - the search and reading logic, with no dependence on the page.
  * Works in the browser (window.DSSSearch) and in Node (require('./search.js')),
  * which is how the tests in tests/ run it.
  *
@@ -7,6 +7,7 @@
  *   data.scrolls   array of scroll names
  *   data.lemmas    array of lexemes (letters only), data.lemmaLang their language ('h' or 'a')
  *   data.lines     [scrollIndex, fragment, line, words[], lemmaIds[], status, biblical, bibleRef]
+ *                  Lines are stored in reading order, so each scroll is one run of lines.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -17,6 +18,11 @@
   var FINALS = { '\u05da': '\u05db', '\u05dd': '\u05de', '\u05df': '\u05e0', '\u05e3': '\u05e4', '\u05e5': '\u05e6' };
   var PREFIX_LETTERS = '\u05d5\u05d4\u05d1\u05db\u05dc\u05de\u05e9'; // ו ה ב כ ל מ ש
   var MARKS = /[\u0591-\u05c7]/g; // cantillation and vowel points
+  var B32 = '0123456789abcdefghijklmnopqrstuv';
+
+  // Status bits, one character per word in the data (see build_data.py).
+  var REC_PART = 1;  // some letters reconstructed by an editor
+  var REC_FULL = 2;  // all letters reconstructed by an editor
 
   var STATUS_LABELS = [
     [1, 'partly reconstructed by an editor'],
@@ -47,9 +53,15 @@
     });
   }
 
+  function statusValue(char) {
+    var value = B32.indexOf(char);
+    return value < 0 ? 0 : value;
+  }
+
   /** Build lookup tables once after loading the data. */
   function buildIndex(data) {
     var lines = data.lines;
+    var nScrolls = data.scrolls.length;
     var total = 0;
     for (var l = 0; l < lines.length; l++) total += lines[l][3].length;
 
@@ -57,15 +69,29 @@
     var lineOf = new Int32Array(total);
     var posOf = new Uint16Array(total);
     var lemmaOf = new Int32Array(total);
+    var statusOf = new Uint8Array(total);
+    var scrollStart = new Int32Array(nScrolls).fill(-1);
+    var scrollEnd = new Int32Array(nScrolls);
+    var scrollWords = new Int32Array(nScrolls);
+    var scrollBibLines = new Int32Array(nScrolls);
+
     var wi = 0;
     for (var li = 0; li < lines.length; li++) {
-      var words = lines[li][3];
-      var lemmas = lines[li][4];
+      var line = lines[li];
+      var words = line[3];
+      var lemmas = line[4];
+      var status = line[5];
+      var s = line[0];
+      if (scrollStart[s] < 0) scrollStart[s] = li;
+      scrollEnd[s] = li + 1;
+      scrollWords[s] += words.length;
+      if (line[6]) scrollBibLines[s] += 1;
       for (var p = 0; p < words.length; p++, wi++) {
         norm[wi] = normalizeHebrew(words[p]);
         lineOf[wi] = li;
         posOf[wi] = p;
         lemmaOf[wi] = lemmas[p];
+        statusOf[wi] = statusValue(status.charAt(p));
       }
     }
     return {
@@ -73,7 +99,12 @@
       lineOf: lineOf,
       posOf: posOf,
       lemmaOf: lemmaOf,
+      statusOf: statusOf,
       lemmaNorm: data.lemmas.map(normalizeHebrew),
+      scrollStart: scrollStart,
+      scrollEnd: scrollEnd,
+      scrollWords: scrollWords,
+      scrollBibLines: scrollBibLines,
       size: total
     };
   }
@@ -143,8 +174,11 @@
 
   /**
    * Run a search.
-   * options: { query, mode, corpus: 'nonbib'|'bib'|'all', scrolls: '1QS, CD', lang: 'any'|'h'|'a' }
-   * Returns { hits: [wordIndex...], byScroll: [[scrollName, count]...] } or { error }.
+   * options: { query, mode, corpus: 'nonbib'|'bib'|'all', scrolls: '1QS, CD', lang: 'any'|'h'|'a',
+   *            reconstructed: 'include'|'skipfull'|'skipany' }
+   *   reconstructed 'skipfull' ignores words that an editor reconstructed entirely;
+   *   'skipany' also ignores words with some reconstructed letters.
+   * Returns { hits: [wordIndex...], byScroll: [[scrollName, count]...], skippedReconstructed } or { error }.
    */
   function search(data, idx, options) {
     var matcher = makeMatcher(options.mode || 'exact', options.query, data, idx);
@@ -152,16 +186,19 @@
 
     var corpus = options.corpus || 'nonbib';
     var lang = options.lang || 'any';
+    var recMask = options.reconstructed === 'skipany' ? (REC_PART | REC_FULL)
+      : options.reconstructed === 'skipfull' ? REC_FULL : 0;
     var allowed = parseScrollFilter(options.scrolls, data.scrolls);
     if (allowed) {
       var any = false;
       for (var s = 0; s < allowed.length; s++) if (allowed[s]) { any = true; break; }
-      if (!any) return { hits: [], byScroll: [], lexemeMatches: matcher.lexemeMatches };
+      if (!any) return { hits: [], byScroll: [], lexemeMatches: matcher.lexemeMatches, skippedReconstructed: 0 };
     }
 
     var lines = data.lines;
     var hits = [];
     var counts = {};
+    var skipped = 0;
     for (var wi = 0; wi < idx.size; wi++) {
       var line = lines[idx.lineOf[wi]];
       if (corpus === 'nonbib' && line[6]) continue;
@@ -173,12 +210,13 @@
         if (lang === 'a' ? wordLang !== 'a' : wordLang === 'a') continue;
       }
       if (!matcher.test(wi)) continue;
+      if (recMask && (idx.statusOf[wi] & recMask)) { skipped++; continue; }
       hits.push(wi);
       counts[line[0]] = (counts[line[0]] || 0) + 1;
     }
     var byScroll = Object.keys(counts).map(function (k) { return [data.scrolls[k], counts[k]]; });
     byScroll.sort(function (a, b) { return b[1] - a[1] || (a[0] < b[0] ? -1 : 1); });
-    return { hits: hits, byScroll: byScroll, lexemeMatches: matcher.lexemeMatches };
+    return { hits: hits, byScroll: byScroll, lexemeMatches: matcher.lexemeMatches, skippedReconstructed: skipped };
   }
 
   function wordItem(line, pos) {
@@ -230,6 +268,7 @@
       scroll: data.scrolls[line[0]],
       fragment: line[1],
       line: line[2],
+      pos: pos,
       ref: data.scrolls[line[0]] + ' ' + line[1] + ':' + line[2],
       bibleRef: line[7] || '',
       lexeme: lemma >= 0 ? data.lemmas[lemma] : '',
@@ -254,7 +293,7 @@
 
   /** Describe a status character from the data (see build_data.py) in words. */
   function statusLabels(char) {
-    var value = '0123456789abcdefghijklmnopqrstuv'.indexOf(char);
+    var value = B32.indexOf(char);
     if (value < 0) return [];
     return STATUS_LABELS.filter(function (entry) { return value & entry[0]; }).map(function (entry) { return entry[1]; });
   }
@@ -277,6 +316,111 @@
     return '\ufeff' + text + '\r\n';
   }
 
+  // ------------------------------------------------------------------ reading
+
+  /**
+   * One entry per scroll that has text, for the list of texts:
+   * { index, id, name, words, lines, kind: 'nonbib' | 'bib' | 'mixed' }.
+   * `names` is the optional map from scroll id to a common name.
+   */
+  function scrollList(data, idx, names) {
+    names = names || {};
+    var out = [];
+    for (var s = 0; s < data.scrolls.length; s++) {
+      if (idx.scrollStart[s] < 0) continue;
+      var lineCount = idx.scrollEnd[s] - idx.scrollStart[s];
+      var bibLines = idx.scrollBibLines[s];
+      out.push({
+        index: s,
+        id: data.scrolls[s],
+        name: names[data.scrolls[s]] || '',
+        words: idx.scrollWords[s],
+        lines: lineCount,
+        kind: bibLines === 0 ? 'nonbib' : (bibLines === lineCount ? 'bib' : 'mixed')
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Filter the list of texts. `corpus` is 'nonbib', 'bib' or 'all' (mixed scrolls appear in
+   * both of the first two). Every word typed in `text` must occur in the id or the name.
+   */
+  function filterScrolls(entries, text, corpus) {
+    var terms = String(text || '').toLowerCase().split(/\s+/).filter(Boolean);
+    return entries.filter(function (entry) {
+      if (corpus === 'nonbib' && entry.kind === 'bib') return false;
+      if (corpus === 'bib' && entry.kind === 'nonbib') return false;
+      var haystack = (entry.id + ' ' + entry.name).toLowerCase();
+      return terms.every(function (term) { return haystack.indexOf(term) !== -1; });
+    });
+  }
+
+  /** Group entries for display: named texts first, then one group per cave, then the rest. */
+  function groupScrolls(entries) {
+    var named = [], caves = {}, other = [];
+    entries.forEach(function (entry) {
+      if (entry.name) { named.push(entry); return; }
+      var m = /^(\d+)Q/i.exec(entry.id);
+      if (m) (caves[m[1]] = caves[m[1]] || []).push(entry);
+      else other.push(entry);
+    });
+    var groups = [];
+    if (named.length) groups.push({ title: 'Named texts', items: named });
+    Object.keys(caves).sort(function (a, b) { return a - b; }).forEach(function (cave) {
+      groups.push({ title: 'Cave ' + cave, items: caves[cave] });
+    });
+    if (other.length) groups.push({ title: 'Other sites and manuscripts', items: other });
+    return groups;
+  }
+
+  /** A readable title for a fragment label from the data ('3' -> Column 3, 'f3ii' -> Fragment 3ii). */
+  function fragmentTitle(label) {
+    label = String(label || '');
+    if (/^\d+$/.test(label)) return 'Column ' + label;
+    var m = /^f(.+)$/.exec(label);
+    if (m) return 'Fragment ' + m[1].replace(/_/g, '\u2013');
+    return label ? 'Section ' + label : 'Text';
+  }
+
+  /** The columns or fragments of a scroll, in order: [{ label, title, start, end }] (line index range). */
+  function getFragments(data, idx, scrollIndex) {
+    var out = [];
+    var start = idx.scrollStart[scrollIndex];
+    if (start < 0) return out;
+    var end = idx.scrollEnd[scrollIndex];
+    var current = null;
+    for (var li = start; li < end; li++) {
+      var label = data.lines[li][1];
+      if (!current || current.label !== label) {
+        current = { label: label, title: fragmentTitle(label), start: li, end: li + 1 };
+        out.push(current);
+      } else {
+        current.end = li + 1;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The words of one line for the reading view: [{ t, s, pos, lexeme }].
+   * With hideReconstructed, a run of fully reconstructed words becomes one { gap: true }.
+   */
+  function readerLine(data, li, hideReconstructed) {
+    var line = data.lines[li];
+    var out = [];
+    for (var p = 0; p < line[3].length; p++) {
+      var status = line[5].charAt(p);
+      if (hideReconstructed && (statusValue(status) & REC_FULL)) {
+        if (!out.length || !out[out.length - 1].gap) out.push({ gap: true });
+        continue;
+      }
+      var lemma = line[4][p];
+      out.push({ t: line[3][p], s: status, pos: p, lexeme: lemma >= 0 ? data.lemmas[lemma] : '' });
+    }
+    return out;
+  }
+
   return {
     normalizeHebrew: normalizeHebrew,
     normalizeRegexSource: normalizeRegexSource,
@@ -286,6 +430,12 @@
     getContext: getContext,
     suggestLexemes: suggestLexemes,
     statusLabels: statusLabels,
-    toCSV: toCSV
+    toCSV: toCSV,
+    scrollList: scrollList,
+    filterScrolls: filterScrolls,
+    groupScrolls: groupScrolls,
+    fragmentTitle: fragmentTitle,
+    getFragments: getFragments,
+    readerLine: readerLine
   };
 }));
