@@ -152,3 +152,124 @@ test('real data: known passages can be found', { skip: !fs.existsSync(dataFile) 
   const withPrefixes = S.search(data, real, { query: 'עין', mode: 'prefixes', corpus: 'nonbib' });
   assert.ok(withPrefixes.hits.length > 20);
 });
+
+// ---------------------------------------------------------------- reconstruction
+// Status characters: '0' attested, '1' partly reconstructed, '2' fully reconstructed.
+const recFixture = {
+  scrolls: ['1QS', '4Q1'],
+  lemmas: ['עין'],
+  lemmaLang: ['h'],
+  lines: [
+    [0, '1', '1', ['עין', 'עין', 'עין', 'עין'], [0, 0, 0, 0], '0120', 0, ''],
+    [1, 'f2', '5', ['עין'], [0], '2', 0, '']
+  ]
+};
+const recIdx = S.buildIndex(recFixture);
+const recRun = (reconstructed) => S.search(recFixture, recIdx, { query: 'עין', mode: 'exact', corpus: 'all', reconstructed });
+
+test('reconstructed words are included unless skipped', () => {
+  assert.strictEqual(recRun('include').hits.length, 5);
+  assert.strictEqual(recRun(undefined).hits.length, 5);
+});
+
+test('skipfull ignores fully reconstructed words and counts them', () => {
+  const result = recRun('skipfull');
+  assert.strictEqual(result.hits.length, 3);
+  assert.strictEqual(result.skippedReconstructed, 2);
+});
+
+test('skipany also ignores partly reconstructed words', () => {
+  const result = recRun('skipany');
+  assert.strictEqual(result.hits.length, 2);
+  assert.strictEqual(result.skippedReconstructed, 3);
+});
+
+test('skipped words are not counted when they would not have matched anyway', () => {
+  const result = S.search(recFixture, recIdx, { query: 'ראה', mode: 'exact', corpus: 'all', reconstructed: 'skipany' });
+  assert.strictEqual(result.skippedReconstructed, 0);
+});
+
+// ---------------------------------------------------------------------- reading
+const names = { '1QS': 'Community Rule' };
+
+test('scrollList describes each scroll that has text', () => {
+  const list = S.scrollList(fixture, idx, names);
+  assert.strictEqual(list.length, 4);
+  assert.deepStrictEqual(list[0], { index: 0, id: '1QS', name: 'Community Rule', words: 6, lines: 2, kind: 'nonbib' });
+  assert.strictEqual(list[3].kind, 'bib');
+});
+
+test('scrollList skips scrolls with no lines', () => {
+  const data = { scrolls: ['A', 'B'], lemmas: [], lemmaLang: [], lines: [[1, '1', '1', ['עין'], [-1], '0', 0, '']] };
+  assert.deepStrictEqual(S.scrollList(data, S.buildIndex(data)).map((e) => e.id), ['B']);
+});
+
+test('filterScrolls by text and by corpus', () => {
+  const list = S.scrollList(fixture, idx, names);
+  assert.deepStrictEqual(S.filterScrolls(list, 'community', 'all').map((e) => e.id), ['1QS']);
+  assert.deepStrictEqual(S.filterScrolls(list, '1qs', 'all').map((e) => e.id), ['1QS', '1QSa']);
+  assert.deepStrictEqual(S.filterScrolls(list, '', 'bib').map((e) => e.id), ['1QIsaa']);
+  assert.deepStrictEqual(S.filterScrolls(list, '', 'nonbib').map((e) => e.id), ['1QS', '1QSa', 'CD']);
+  assert.deepStrictEqual(S.filterScrolls(list, 'rule 1q', 'all').map((e) => e.id), ['1QS']);
+});
+
+test('groupScrolls puts named texts first, then caves in numeric order, then others', () => {
+  const entries = [
+    { id: '4Q9', name: '' }, { id: '11Q1', name: '' }, { id: '2Q1', name: '' },
+    { id: 'CD', name: '' }, { id: '1QS', name: 'Community Rule' }
+  ];
+  assert.deepStrictEqual(S.groupScrolls(entries).map((g) => g.title),
+    ['Named texts', 'Cave 2', 'Cave 4', 'Cave 11', 'Other sites and manuscripts']);
+});
+
+test('fragmentTitle turns data labels into readable titles', () => {
+  assert.strictEqual(S.fragmentTitle('3'), 'Column 3');
+  assert.strictEqual(S.fragmentTitle('f3ii'), 'Fragment 3ii');
+  assert.strictEqual(S.fragmentTitle('f1_2Riii'), 'Fragment 1\u20132Riii');
+  assert.strictEqual(S.fragmentTitle('a0'), 'Section a0');
+});
+
+test('getFragments lists the columns of a scroll with their line ranges', () => {
+  const frags = S.getFragments(fixture, idx, 0);
+  assert.deepStrictEqual(frags.map((f) => [f.label, f.start, f.end]), [['1', 0, 2]]);
+  assert.strictEqual(S.getFragments(recFixture, recIdx, 1)[0].title, 'Fragment 2');
+});
+
+test('readerLine collapses a run of fully reconstructed words into one gap', () => {
+  const data = { scrolls: ['X'], lemmas: ['עין'], lemmaLang: ['h'],
+    lines: [[0, '1', '1', ['א', 'ב', 'ג', 'ד', 'ה'], [0, -1, -1, -1, 0], '02210', 0, '']] };
+  const shown = S.readerLine(data, 0, false);
+  assert.strictEqual(shown.length, 5);
+  assert.strictEqual(shown[0].lexeme, 'עין');
+  assert.strictEqual(shown[1].lexeme, '');
+  const hidden = S.readerLine(data, 0, true);
+  assert.deepStrictEqual(hidden.map((w) => (w.gap ? '…' : w.t)), ['א', '…', 'ד', 'ה']);
+  assert.strictEqual(hidden[2].pos, 3);
+});
+
+test('getContext reports the position of the hit in its line', () => {
+  const hit = run({ query: 'מעין', mode: 'exact', corpus: 'all' }).hits[0];
+  assert.strictEqual(S.getContext(fixture, idx, hit, 1).pos, 2);
+});
+
+test('real data: skipping reconstructed words lowers the count', { skip: !fs.existsSync(dataFile) }, () => {
+  const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  const real = S.buildIndex(data);
+  const all = S.search(data, real, { query: 'ארצ', mode: 'prefixes', corpus: 'bib' });
+  const some = S.search(data, real, { query: 'ארצ', mode: 'prefixes', corpus: 'bib', reconstructed: 'skipfull' });
+  const few = S.search(data, real, { query: 'ארצ', mode: 'prefixes', corpus: 'bib', reconstructed: 'skipany' });
+  assert.ok(all.hits.length > some.hits.length && some.hits.length > few.hits.length);
+  assert.strictEqual(all.hits.length - some.hits.length, some.skippedReconstructed);
+});
+
+test('real data: every scroll can be listed and 1QS can be read in column order', { skip: !fs.existsSync(dataFile) }, () => {
+  const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  const real = S.buildIndex(data);
+  const list = S.scrollList(data, real, {});
+  assert.ok(list.length > 900);
+  const qs = list.find((e) => e.id === '1QS');
+  const frags = S.getFragments(data, real, qs.index);
+  assert.ok(frags.length >= 11);
+  assert.strictEqual(frags[0].title, 'Column 1');
+  assert.strictEqual(S.readerLine(data, frags[0].start, false)[0].t.length > 0, true);
+});
