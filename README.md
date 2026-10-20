@@ -21,6 +21,9 @@ Your browser opens at <http://localhost:8000>. Press Ctrl+C in the terminal to s
 
 Do not open `index.html` by double-clicking it. Browsers block a page from reading local data files, so the page needs the small server that `serve.py` starts. The server listens on your own computer only.
 
+<img width="1929" height="967" alt="Screen Shot 2026-10-20 at 10 52 32 AM" src="https://github.com/user-attachments/assets/774994ed-d1d9-4990-964d-05d9caa9e40d" />
+
+
 ## Using the search
 
 | Match | Finds | Example: `עין` |
