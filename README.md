@@ -77,8 +77,6 @@ How words are marked in the results and in the reader:
 - The **code** is under the MIT license (see `LICENSE`).
 - The **data** in `data/dss.json` is derived from the ETCBC/CACCHT dataset, which is licensed **CC BY-NC 4.0**: free to share and adapt with attribution, **not for commercial use**. The MIT license does not cover it. See `data/README.md`, and credit the dataset when you publish results.
 
-If you publish a fork or put it on GitHub Pages, keep the attribution line at the bottom of the page and the non-commercial terms.
-
 ## Data format
 
 `data/dss.json` is one JSON object:
