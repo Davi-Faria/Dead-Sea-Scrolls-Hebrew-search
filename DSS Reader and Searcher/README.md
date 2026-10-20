@@ -2,7 +2,7 @@
 
 A small web page for searching the Hebrew and Aramaic text of the Dead Sea Scrolls. It runs on your own computer, needs nothing installed except Python, and works offline once you have the files.
 
-You type a Hebrew word and get every place it occurs, with the surrounding words, the scroll, fragment or column, and line. You can search whole words, words with prefixes, every form of a lexeme, or a pattern; limit the search to certain scrolls; and download the hits as a spreadsheet.
+The **Search** tab finds every place a Hebrew word occurs, with the surrounding words, the scroll, fragment or column, and line. You can search whole words, words with prefixes, every form of a lexeme, or a pattern; limit the search to certain scrolls; leave out hits that rest on reconstructed text; and download the hits as a spreadsheet. The **Read** tab lets you open any manuscript and read it from beginning to end.
 
 The text comes from the [CACCHT Dead Sea Scrolls dataset](https://github.com/ETCBC/dss) (ETCBC), covering about 390,000 words in 1,001 scrolls, biblical and non-biblical.
 
@@ -11,7 +11,7 @@ The text comes from the [CACCHT Dead Sea Scrolls dataset](https://github.com/ETC
 You need Python 3.8 or newer.
 
 ```
-git clone <https://github.com/Davi-Faria/Dead-Sea-Scrolls-Hebrew-search.git>
+git clone <this repository>
 cd dss-hebrew-search
 python serve.py
 ```
@@ -34,11 +34,24 @@ Do not open `index.html` by double-clicking it. Browsers block a page from readi
 - The page matches one word at a time. To find two words that sit next to each other, search the first and read the context.
 - **Texts** switches between non-biblical scrolls (the default), biblical scrolls and everything.
 - **Scrolls** takes names such as `1QS, CD`. A name that matches a scroll exactly selects only that scroll (`1QS` does not include `1QSa`); end a name with `*` to select everything that starts with it (`4Q4*`). You can also click a scroll in "Hits by scroll".
+- **Reconstructed text** can leave out hits that rest on an editor's reconstruction. "Skip fully reconstructed words" drops words in which every letter was supplied by an editor. "Skip any word with reconstructed letters" is stricter and also drops words where only some letters were. The page tells you how many matching words were left out, so you can see what the setting removed.
 - **Words of context** sets how many words appear on each side; the context continues into neighbouring lines of the same fragment, with `/` marking a line break.
 - The address bar keeps your search (`#q=…`), so you can bookmark it or send the link.
 - "Download all hits as CSV" saves every hit (not just the ones on screen) in a file that Excel opens correctly with Hebrew.
+- Each result's reference is a link that opens the passage in the Read tab, with the line and the word highlighted.
 
-How words are marked in the results:
+## Reading a text
+
+Open the **Read** tab, find a text in the list (type part of an id or a name, such as `1QS` or `Enoch`), and click it. Named texts are listed first, then the rest of each cave. "Show" switches between non-biblical scrolls (the default), biblical scrolls and everything.
+
+- **View** is either the whole manuscript on one page (scroll through it) or one column or fragment at a time. **Go to**, **Previous** and **Next** move between columns and fragments.
+- Each line has its number on the left edge. For biblical manuscripts the verse reference is shown beside it.
+- **Hide fully reconstructed words** replaces words that an editor supplied in full with `[…]`, so you read only what survives. Partly reconstructed and uncertain words stay visible and keep their marks (see below).
+- **Click a word** to search for every form of its lexeme (or for the exact word, if it has no lexeme). Hover a word to see its lexeme.
+- **Search in this text** takes you to the Search tab with the scroll already filled in.
+- The address bar keeps your place (`#read=1QS&frag=3`), so you can bookmark a column or send a link to it.
+
+How words are marked in the results and in the reader:
 
 - faded in brackets: reconstructed by an editor
 - dotted underline: partly reconstructed
@@ -52,6 +65,8 @@ How words are marked in the results:
 - Lexeme search uses the dataset's lexemes with the vowel points removed, so homographs share an entry. For example, forms of עור meaning "blind", "skin" and "be awake" all appear under one lexeme.
 - The original dataset writes prefixes as separate units. This page joins them to the word they belong to, based on the dataset's own spacing.
 - Lines that contain no words are not exported (126 of the 52,895 lines in the source).
+- "Reconstructed" follows the dataset's own flag for letters supplied by a modern editor. It does not say how secure a reconstruction is.
+- Some scrolls are very fragmentary, so the reader shows many short fragments in the order the dataset gives them, not necessarily the order of the original manuscript.
 
 ## Data and license
 
@@ -108,25 +123,13 @@ The same two commands run on GitHub for every push (`.github/workflows/test.yml`
 
 | File | Purpose |
 | --- | --- |
-| `index.html`, `style.css`, `app.js` | the page |
-| `search.js` | the search logic, shared by the page and the tests |
+| `index.html`, `style.css`, `app.js` | the page (Search and Read tabs) |
+| `search.js` | the search and reading logic, shared by the page and the tests |
 | `serve.py` | local server and browser launcher |
 | `build_data.py` | builds `data/dss.json` from the ETCBC dataset |
 | `data/dss.json` | the text (built; see Data and license) |
 | `data/scroll-names.json` | common names of scrolls, by hand |
 | `tests/` | tests |
-
-## Ideas for improvement
-
-- Search for two or more adjacent words (phrase search).
-- Filters from the dataset's grammar: part of speech, gender, number, verb stem.
-- English glosses for lexemes, and a lexeme browser.
-- Search by transliteration.
-- Links from each hit to Qumran-Digital or to images of the fragment.
-- Mark the reconstructed or uncertain part of a word instead of the whole word.
-- Show corrected and removed text in the results.
-- Fill in `data/scroll-names.json` (it covers the main compositions only).
-- A workflow that rebuilds the data when ETCBC/dss changes.
 
 ## Credits
 
