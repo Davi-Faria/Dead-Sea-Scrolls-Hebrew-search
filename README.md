@@ -50,6 +50,7 @@ Open the Biblical parallels tab, choose a book and a chapter (the list shows how
 - Manuscripts (a list under the controls) lets you hide columns you do not need. Hide fully reconstructed words replaces words that an editor supplied in full with […], so you can compare only what survives.
 - Quoted or echoed in other texts: pesharim, the Melchizedek text, rewritten Torah and other works, grouped by text, with the quoted words highlighted and a link to read each in context. For Habakkuk 1 this lists the 18 passages of the Pesher Habakkuk that quote it.
 - The address bar keeps the chapter (#parallels=Is&ch=61), and &v=2 highlights a verse. A search hit or a line in the Read tab on a biblical manuscript has its reference (for example Is 61:1) as a link to this tab. 
+
 How quotations are found: the build compares every stretch of non-biblical text with every verse of every biblical manuscript, ignoring vowel letters (ו, י) and final forms so that full and defective spellings match, and keeps stretches of four or more words in a row. A match that fits many verses (a formula such as "the LORD your God") is dropped. This is a heuristic: it finds paraphrase and rewritten Torah as well as exact quotation, it can miss quotations broken by damage or by a different wording, and it does not itself identify the commentary that follows a quotation.
 
 ## Reading a text
