@@ -1,0 +1,2 @@
+# Only needed to rebuild data/dss.json (python build_data.py). Searching needs no installs.
+text-fabric>=13
