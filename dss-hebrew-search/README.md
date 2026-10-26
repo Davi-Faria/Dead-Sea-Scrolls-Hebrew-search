@@ -2,7 +2,7 @@
 
 A small web page for searching the Hebrew and Aramaic text of the Dead Sea Scrolls. It runs on your own computer, needs nothing installed except Python, and works offline once you have the files.
 
-The **Search** tab finds every place a Hebrew word occurs, with the surrounding words, the scroll, fragment or column, and line. You can search whole words, words with prefixes, every form of a lexeme, or a pattern; limit the search to certain scrolls; leave out hits that rest on reconstructed text; and download the hits as a spreadsheet. The **Read** tab lets you open any manuscript and read it from beginning to end.
+The **Search** tab finds every place a Hebrew word occurs, with the surrounding words, the scroll, fragment or column, and line. You can search whole words, words with prefixes, every form of a lexeme, or a pattern; limit the search to certain scrolls; leave out hits that rest on reconstructed text; and download the hits as a spreadsheet. The **Read** tab lets you open any manuscript and read it from beginning to end. The **Biblical parallels** tab shows a biblical chapter in every manuscript that has it, verse by verse in columns, and lists the pesharim and other texts that quote it.
 
 The text comes from the [CACCHT Dead Sea Scrolls dataset](https://github.com/ETCBC/dss) (ETCBC), covering about 390,000 words in 1,001 scrolls, biblical and non-biblical.
 
@@ -41,11 +41,13 @@ Do not open `index.html` by double-clicking it. Browsers block a page from readi
 - Each result's reference is a link that opens the passage in the Read tab, with the line and the word highlighted.
 
 ## Comparing manuscripts of a biblical chapter
-Open the Biblical parallels tab, choose a book and a chapter (the list shows how many manuscripts contain each chapter and how many other texts quote it), and the page shows:
-- A table with one row per verse and one column per manuscript. For Isaiah 61 that is the Great Isaiah Scroll, 1QIsab, and two Cave 4 manuscripts. A dash means the verse is not preserved in that manuscript. Under each verse is its place in the manuscript (for example 51:2); click it to read that passage in context.
-- Manuscripts (a list under the controls) lets you hide columns you do not need. Hide fully reconstructed words replaces words that an editor supplied in full with […], so you can compare only what survives.
-- Quoted or echoed in other texts: pesharim, the Melchizedek text, rewritten Torah and other works, grouped by text, with the quoted words highlighted and a link to read each in context. For Habakkuk 1 this lists the 18 passages of the Pesher Habakkuk that quote it.
-- The address bar keeps the chapter (#parallels=Is&ch=61), and &v=2 highlights a verse. A search hit or a line in the Read tab on a biblical manuscript has its reference (for example Is 61:1) as a link to this tab. 
+
+Open the **Biblical parallels** tab, choose a book and a chapter (the list shows how many manuscripts contain each chapter and how many other texts quote it), and the page shows:
+
+- **A table with one row per verse and one column per manuscript.** For Isaiah 61 that is the Great Isaiah Scroll, 1QIsab, and two Cave 4 manuscripts. A dash means the verse is not preserved in that manuscript. Under each verse is its place in the manuscript (for example `51:2`); click it to read that passage in context.
+- **Manuscripts** (a list under the controls) lets you hide columns you do not need. **Hide fully reconstructed words** replaces words that an editor supplied in full with `[…]`, so you can compare only what survives.
+- **Quoted or echoed in other texts:** pesharim, the Melchizedek text, rewritten Torah and other works, grouped by text, with the quoted words highlighted and a link to read each in context. For Habakkuk 1 this lists the 18 passages of the Pesher Habakkuk that quote it.
+- The address bar keeps the chapter (`#parallels=Is&ch=61`), and `&v=2` highlights a verse. A search hit or a line in the Read tab on a biblical manuscript has its reference (for example `Is 61:1`) as a link to this tab.
 
 How quotations are found: the build compares every stretch of non-biblical text with every verse of every biblical manuscript, ignoring vowel letters (ו, י) and final forms so that full and defective spellings match, and keeps stretches of four or more words in a row. A match that fits many verses (a formula such as "the LORD your God") is dropped. This is a heuristic: it finds paraphrase and rewritten Torah as well as exact quotation, it can miss quotations broken by damage or by a different wording, and it does not itself identify the commentary that follows a quotation.
 
@@ -74,6 +76,8 @@ How words are marked in the results and in the reader:
 - Lexeme search uses the dataset's lexemes with the vowel points removed, so homographs share an entry. For example, forms of עור meaning "blind", "skin" and "be awake" all appear under one lexeme.
 - The original dataset writes prefixes as separate units. This page joins them to the word they belong to, based on the dataset's own spacing.
 - Lines that contain no words are not exported (126 of the 52,895 lines in the source).
+- The Biblical parallels tab uses the dataset's own book, chapter and verse labels. Fragments that the dataset did not place in a book (for example `1Q4`) are not included, and Esther, Nehemiah and 1 Chronicles do not appear because the dataset has no text for them.
+- The parallels tab compares only Dead Sea Scrolls manuscripts: there is no Masoretic Text or Septuagint column.
 - "Reconstructed" follows the dataset's own flag for letters supplied by a modern editor. It does not say how secure a reconstruction is.
 - Some scrolls are very fragmentary, so the reader shows many short fragments in the order the dataset gives them, not necessarily the order of the original manuscript.
 
@@ -86,7 +90,7 @@ If you publish a fork or put it on GitHub Pages, keep the attribution line at th
 
 ## Data format
 
-`data/dss.json` is one JSON object:
+`data/dss.json` is one JSON object (`data/bible.json`, used by the Parallels tab, is described after it):
 
 ```
 {
@@ -106,6 +110,18 @@ If you publish a fork or put it on GitHub Pages, keep the attribution line at th
 }
 ```
 
+`data/bible.json`:
+
+```
+{
+  "books":    [["Gen", "Genesis"], ["Is", "Isaiah"], ...],      // book codes are the dataset's
+  "segments": [[line, book, chapter, verse, firstWord, endWord], ...],   // verse text in biblical manuscripts
+  "quotes":   [[line, firstWord, endWord, book, chapter, firstVerse, lastVerse, span], ...]   // quotations elsewhere
+}
+```
+
+`line` is an index into `data.lines` in `dss.json`, and the word numbers are positions in that line. Pieces of one quotation that run over several lines share a `span` number.
+
 The status character is base 32 (`0-9a-v`) for the sum of: 1 partly reconstructed, 2 reconstructed, 4 uncertain, 8 corrected, 16 removed.
 
 ## Rebuilding the data
@@ -117,7 +133,7 @@ pip install -r requirements-build.txt
 python build_data.py
 ```
 
-This downloads about 100 MB of Text-Fabric files (into `.cache/`, ignored by git) and writes `data/dss.json` in about a minute. To use a local clone of [ETCBC/dss](https://github.com/ETCBC/dss) instead: `python build_data.py --tf-dir path/to/dss/tf/2.0.1`. To build from a newer commit: `python build_data.py --ref master`.
+This downloads about 100 MB of Text-Fabric files (into `.cache/`, ignored by git) and writes `data/dss.json` and `data/bible.json` in about a minute. To use a local clone of [ETCBC/dss](https://github.com/ETCBC/dss) instead: `python build_data.py --tf-dir path/to/dss/tf/2.0.1`. To build from a newer commit: `python build_data.py --ref master`.
 
 ## Tests
 
@@ -132,13 +148,31 @@ The same two commands run on GitHub for every push (`.github/workflows/test.yml`
 
 | File | Purpose |
 | --- | --- |
-| `index.html`, `style.css`, `app.js` | the page (Search and Read tabs) |
-| `search.js` | the search and reading logic, shared by the page and the tests |
+| `index.html`, `style.css`, `app.js` | the page (Search, Read and Biblical parallels tabs) |
+| `search.js` | the search, reading and parallels logic, shared by the page and the tests |
 | `serve.py` | local server and browser launcher |
-| `build_data.py` | builds `data/dss.json` from the ETCBC dataset |
-| `data/dss.json` | the text (built; see Data and license) |
+| `build_data.py` | builds `data/dss.json` and `data/bible.json` from the ETCBC dataset |
+| `bible_parallels.py` | verse segments and quotation detection for the Parallels tab |
+| `data/dss.json`, `data/bible.json` | the text and the biblical-parallels data (built; see Data and license) |
 | `data/scroll-names.json` | common names of scrolls, by hand |
 | `tests/` | tests |
+
+## Ideas for improvement
+
+- Search for two or more adjacent words (phrase search).
+- Highlight the differences between manuscripts in the parallels table, and add the Masoretic Text and Septuagint as comparison columns.
+- Show the pesher's commentary lines together with each quotation, not only the quoted words.
+- Filters from the dataset's grammar: part of speech, gender, number, verb stem.
+- English glosses for lexemes, and a lexeme browser.
+- Search by transliteration.
+- Links from each hit to Qumran-Digital or to images of the fragment.
+- Mark the reconstructed or uncertain part of a word instead of the whole word, and offer the same "skip" setting for uncertain letters.
+- Print or export a whole text as plain text or a document.
+- Show a text's columns in a facing-page layout, or two texts side by side (for example, parallel copies of the Damascus Document).
+- Remember the last text and position between visits.
+- Show corrected and removed text in the results.
+- Fill in `data/scroll-names.json` (it covers the main compositions only).
+- A workflow that rebuilds the data when ETCBC/dss changes.
 
 ## Credits
 

@@ -22,10 +22,16 @@
     readerEmpty: $('reader-empty'), readerBody: $('reader-body'), readerTitle: $('reader-title'),
     readerMeta: $('reader-meta'), readerView: $('reader-view'), readerJump: $('reader-jump'),
     readerPrev: $('reader-prev'), readerNext: $('reader-next'), readerHideRec: $('reader-hide-rec'),
-    readerSearch: $('reader-search'), readerText: $('reader-text')
+    readerSearch: $('reader-search'), readerText: $('reader-text'),
+    parBook: $('par-book'), parChapter: $('par-chapter'), parHideRec: $('par-hide-rec'), parQuotes: $('par-quotes'),
+    parMss: $('par-mss'), parMssSummary: $('par-mss-summary'), parMssList: $('par-mss-list'),
+    parEmpty: $('par-empty'), parBody: $('par-body'), parTitle: $('par-title'), parMeta: $('par-meta'),
+    parTable: $('par-table'), parQuoteSection: $('par-quote-section'), parQuoteList: $('par-quote-list'),
+    parQuoteCount: $('par-quote-count')
   };
   var controls = [els.q, els.mode, els.corpus, els.scrolls, els.lang, els.rec, els.ctx,
-    els.form.querySelector('button[type="submit"]'), els.textFilter, els.textCorpus];
+    els.form.querySelector('button[type="submit"]'), els.textFilter, els.textCorpus,
+    els.parBook, els.parChapter, els.parHideRec, els.parQuotes];
 
   var data = null;
   var index = null;
@@ -36,6 +42,10 @@
   var reader = { scroll: -1, fragments: [], frag: 0, target: null, lineEls: {} };
   var lastSearchHash = '';
   var lastReadHash = '';
+  var lastParallelsHash = '';
+  var bib = null;                 // index built from data/bible.json (null if the file is missing)
+  var par = { book: -1, chapter: null, hidden: {}, verse: null };
+  var TABS = ['search', 'read', 'parallels'];
 
   // ---------------------------------------------------------------- loading
 
@@ -69,12 +79,18 @@
       })
       .then(function (loadedNames) {
         names = loadedNames;
+        return fetchJSON('data/bible.json').then(function (bible) {
+          bib = DSSSearch.buildBibleIndex(bible, data);
+        }, function () { bib = null; });
+      })
+      .then(function () {
         textEntries = DSSSearch.scrollList(data, index, names);
         setEnabled(true);
         var meta = data.meta;
         setStatus('Ready. ' + meta.words.toLocaleString() + ' words in ' + data.scrolls.length.toLocaleString() + ' scrolls.');
         els.source.textContent = 'Text: ' + meta.source + ' (' + meta.license + ').';
         renderTextList();
+        fillBooks();
         route();
       })
       .catch(function (error) {
@@ -85,13 +101,14 @@
   // ------------------------------------------------------------ tabs, routing
 
   function showTab(name) {
-    ['search', 'read'].forEach(function (tab) {
+    TABS.forEach(function (tab) {
       var selected = tab === name;
       $('tab-' + tab).hidden = !selected;
       var button = $('tab-btn-' + tab);
       button.setAttribute('aria-selected', selected ? 'true' : 'false');
       button.tabIndex = selected ? 0 : -1;
     });
+    document.body.classList.toggle('wide', name === 'parallels');
   }
 
   /** Change the address-bar hash; if it is already that value, just re-route. */
@@ -101,12 +118,16 @@
   }
 
   function goTab(name) {
-    setHash(name === 'read' ? (lastReadHash || 'read=') : lastSearchHash);
+    setHash(name === 'read' ? (lastReadHash || 'read=')
+      : name === 'parallels' ? (lastParallelsHash || 'parallels=') : lastSearchHash);
   }
 
   function route() {
     var params = new URLSearchParams(location.hash.slice(1));
-    if (params.has('read')) {
+    if (params.has('parallels')) {
+      showTab('parallels');
+      if (data) applyParallelsParams(params);
+    } else if (params.has('read')) {
       showTab('read');
       if (data) applyReadParams(params);
     } else {
@@ -119,7 +140,8 @@
     button.addEventListener('click', function () { goTab(button.getAttribute('data-tab')); });
     button.addEventListener('keydown', function (event) {
       if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-      var other = button.getAttribute('data-tab') === 'search' ? 'read' : 'search';
+      var at = TABS.indexOf(button.getAttribute('data-tab'));
+      var other = TABS[(at + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
       goTab(other);
       $('tab-btn-' + other).focus();
     });
@@ -232,12 +254,7 @@
       name.textContent = names[c.scroll];
       ref.appendChild(name);
     }
-    if (c.bibleRef) {
-      var bible = document.createElement('span');
-      bible.className = 'ref-bible';
-      bible.textContent = c.bibleRef;
-      ref.appendChild(bible);
-    }
+    if (c.bibleRef) ref.appendChild(bibleLink(c.bibleRef, 'ref-bible'));
     if (c.lexeme) {
       var lexeme = document.createElement('span');
       lexeme.className = 'ref-lexeme';
@@ -481,12 +498,7 @@
     var num = document.createElement('span');
     num.className = 'num';
     num.textContent = line[2];
-    if (line[7]) {
-      var bref = document.createElement('span');
-      bref.className = 'bref';
-      bref.textContent = line[7];
-      num.appendChild(bref);
-    }
+    if (line[7]) num.appendChild(bibleLink(line[7], 'bref'));
     var text = document.createElement('p');
     text.className = 'rt';
     var target = reader.target;
@@ -689,6 +701,281 @@
   });
   els.textFilter.addEventListener('input', renderTextList);
   els.textCorpus.addEventListener('change', renderTextList);
+
+  // ---------------------------------------------------------------- parallels
+
+  /** A link to the Parallels tab for a reference such as "Is 61:1" (plain text if the tab has no data). */
+  function bibleLink(ref, className) {
+    var parsed = DSSSearch.parseBibleRef(ref);
+    if (!parsed || !bib || bib.bookIndex[parsed.code] === undefined) {
+      var plain = document.createElement('span');
+      plain.className = className;
+      plain.textContent = ref;
+      return plain;
+    }
+    var link = document.createElement('a');
+    link.className = className;
+    link.href = '#' + new URLSearchParams({ parallels: parsed.code, ch: String(parsed.chapter), v: String(parsed.verse) }).toString();
+    link.title = 'Compare the manuscripts and quotations for this chapter';
+    link.textContent = ref;
+    return link;
+  }
+
+  function fillBooks() {
+    els.parBook.textContent = '';
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = bib ? 'Choose a book' : 'No data (data/bible.json is missing)';
+    els.parBook.appendChild(none);
+    if (!bib) { els.parChapter.disabled = true; return; }
+    bib.books.forEach(function (book, i) {
+      var option = document.createElement('option');
+      option.value = book[0];
+      option.textContent = book[1];
+      els.parBook.appendChild(option);
+    });
+    fillChapters();
+  }
+
+  function fillChapters() {
+    els.parChapter.textContent = '';
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'Choose a chapter';
+    els.parChapter.appendChild(none);
+    var code = els.parBook.value;
+    if (!bib || !code) { els.parChapter.disabled = true; return; }
+    els.parChapter.disabled = false;
+    DSSSearch.bibleChapters(bib, bib.bookIndex[code]).forEach(function (info) {
+      var option = document.createElement('option');
+      option.value = String(info.chapter);
+      var bits = [];
+      if (info.manuscripts) bits.push(info.manuscripts + (info.manuscripts === 1 ? ' manuscript' : ' manuscripts'));
+      if (info.quotes) bits.push(info.quotes + (info.quotes === 1 ? ' quotation' : ' quotations'));
+      option.textContent = info.chapter + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+      els.parChapter.appendChild(option);
+    });
+  }
+
+  function parallelsHash() {
+    var params = { parallels: els.parBook.value, ch: els.parChapter.value };
+    if (par.verse) params.v = String(par.verse);
+    return new URLSearchParams(params).toString();
+  }
+
+  function applyParallelsParams(params) {
+    var code = params.get('parallels');
+    if (!bib || !code || bib.bookIndex[code] === undefined) {
+      par.chapter = null;
+      els.parBody.hidden = true;
+      els.parEmpty.hidden = false;
+      els.parEmpty.textContent = !bib ? 'The parallels data (data/bible.json) is missing. Build it with "python build_data.py".'
+        : (code ? 'There is no biblical text called "' + code + '" in this dataset.' : 'Choose a book and chapter to compare manuscripts and see where other texts quote it.');
+      if (bib && els.parBook.value !== (code || '')) { els.parBook.value = ''; fillChapters(); }
+      return;
+    }
+    if (els.parBook.value !== code) { els.parBook.value = code; fillChapters(); }
+    var chapter = parseInt(params.get('ch'), 10);
+    if (isNaN(chapter)) {
+      els.parChapter.value = '';
+      par.chapter = null;
+      els.parBody.hidden = true;
+      els.parEmpty.hidden = false;
+      els.parEmpty.textContent = 'Choose a chapter.';
+      return;
+    }
+    els.parChapter.value = String(chapter);
+    var verse = parseInt(params.get('v'), 10);
+    var changed = par.book !== bib.bookIndex[code] || par.chapter !== chapter;
+    par.book = bib.bookIndex[code];
+    par.chapter = chapter;
+    par.verse = isNaN(verse) ? null : verse;
+    if (changed) par.hidden = {};
+    lastParallelsHash = parallelsHash();
+    history.replaceState(null, '', '#' + lastParallelsHash);
+    renderParallels(true);
+  }
+
+  function parWord(item) {
+    if (item.gap) {
+      var gap = document.createElement('span');
+      gap.className = 'gap';
+      gap.title = 'reconstructed text hidden';
+      gap.textContent = '[\u2026]';
+      return gap;
+    }
+    return wordNode(item);
+  }
+
+  function readLink(id, frag, line, pos, text, title) {
+    var link = document.createElement('a');
+    link.className = 'where';
+    var params = { read: id };
+    if (frag !== undefined && frag !== null) { params.frag = frag; params.line = line; params.pos = String(pos); }
+    link.href = '#' + new URLSearchParams(params).toString();
+    link.title = title || 'Read this in context';
+    link.textContent = text;
+    return link;
+  }
+
+  function renderParallels(scrollToVerse) {
+    var info = DSSSearch.chapterParallels(data, bib, par.book, par.chapter, names);
+    var hide = els.parHideRec.checked;
+    var bookName = info.book[1];
+    els.parEmpty.hidden = true;
+    els.parBody.hidden = false;
+    els.parTitle.textContent = bookName + ' ' + info.chapter;
+    var count = info.witnesses.length;
+    els.parMeta.textContent = count + (count === 1 ? ' manuscript in the dataset contains' : ' manuscripts in the dataset contain') + ' this chapter' +
+      (info.quotes.length ? ', and ' + info.quotes.length + (info.quotes.length === 1 ? ' other text quotes' : ' other texts quote') + ' it.' : '.');
+
+    // manuscript checkboxes
+    els.parMssList.textContent = '';
+    info.witnesses.forEach(function (w) {
+      var label = document.createElement('label');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = !par.hidden[w.scroll];
+      box.addEventListener('change', function () {
+        if (box.checked) delete par.hidden[w.scroll]; else par.hidden[w.scroll] = true;
+        renderParallels(false);
+      });
+      label.appendChild(box);
+      label.appendChild(document.createTextNode(' ' + w.id + (w.name ? ' (' + w.name + ')' : '')));
+      els.parMssList.appendChild(label);
+    });
+    els.parMss.hidden = info.witnesses.length < 2;
+    var visible = info.witnesses.filter(function (w) { return !par.hidden[w.scroll]; });
+    els.parMssSummary.textContent = 'Manuscripts shown: ' + visible.length + ' of ' + info.witnesses.length;
+
+    // table
+    els.parTable.textContent = '';
+    if (!visible.length) {
+      var emptyRow = els.parTable.insertRow();
+      emptyRow.insertCell().textContent = info.witnesses.length ? 'No manuscripts selected.' : 'No manuscript in the dataset has text of this chapter.';
+    } else {
+      var seen = {};
+      visible.forEach(function (w) { w.verseList.forEach(function (v) { seen[v] = true; }); });
+      var verses = Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+      var head = els.parTable.createTHead().insertRow();
+      var corner = document.createElement('th');
+      corner.scope = 'col';
+      corner.textContent = 'Verse';
+      head.appendChild(corner);
+      visible.forEach(function (w) {
+        var th = document.createElement('th');
+        th.scope = 'col';
+        var id = document.createElement('a');
+        id.className = 'par-id';
+        id.href = '#' + new URLSearchParams({ read: w.id }).toString();
+        id.title = 'Open this manuscript in the Read tab';
+        id.textContent = w.id;
+        th.appendChild(id);
+        if (w.name) { var nm = document.createElement('span'); nm.className = 'par-name'; nm.textContent = w.name; th.appendChild(nm); }
+        var cov = document.createElement('span');
+        cov.className = 'par-cov';
+        cov.textContent = w.first === w.last ? 'v. ' + w.first : 'vv. ' + w.first + '\u2013' + w.last;
+        th.appendChild(cov);
+        head.appendChild(th);
+      });
+      var tbody = els.parTable.createTBody();
+      var targetRow = null;
+      verses.forEach(function (v) {
+        var row = tbody.insertRow();
+        var th = document.createElement('th');
+        th.scope = 'row';
+        th.textContent = v;
+        row.appendChild(th);
+        if (par.verse === v) { row.className = 'target'; targetRow = row; }
+        visible.forEach(function (w) {
+          var cell = row.insertCell();
+          var segs = w.verses[v];
+          if (!segs) { cell.className = 'absent'; cell.textContent = '\u2014'; cell.title = 'Not preserved in ' + w.id; return; }
+          var text = document.createElement('p');
+          text.className = 'rt';
+          text.dir = 'rtl';
+          text.lang = 'he';
+          DSSSearch.verseItems(data, segs, hide).forEach(function (item) {
+            text.appendChild(parWord(item));
+            text.appendChild(document.createTextNode(' '));
+          });
+          cell.appendChild(text);
+          var where = DSSSearch.whereIs(data, segs);
+          cell.appendChild(readLink(w.id, where.frag, where.line, where.pos, where.label));
+        });
+      });
+      if (scrollToVerse && targetRow && targetRow.scrollIntoView) targetRow.scrollIntoView({ block: 'center' });
+    }
+
+    renderQuotes(info);
+  }
+
+  function renderQuotes(info) {
+    els.parQuoteList.textContent = '';
+    var show = els.parQuotes.checked && info.quotes.length;
+    els.parQuoteSection.hidden = !els.parQuotes.checked;
+    if (!els.parQuotes.checked) return;
+    if (!info.quotes.length) {
+      els.parQuoteCount.textContent = 'No quotation of this chapter was found in the non-biblical texts.';
+      return;
+    }
+    var total = info.quotes.reduce(function (n, q) { return n + q.spans.length; }, 0);
+    els.parQuoteCount.textContent = total + (total === 1 ? ' passage' : ' passages') + ' in ' + info.quotes.length +
+      (info.quotes.length === 1 ? ' text' : ' texts') + '.';
+    info.quotes.forEach(function (group, index) {
+      var details = document.createElement('details');
+      details.open = index === 0 || group.spans.length <= 3;
+      var summary = document.createElement('summary');
+      summary.textContent = group.id + (group.name ? ' (' + group.name + ')' : '') + ': ' + group.spans.length +
+        (group.spans.length === 1 ? ' passage' : ' passages');
+      details.appendChild(summary);
+      group.spans.forEach(function (span) {
+        var view = DSSSearch.quoteView(data, span.records);
+        var box = document.createElement('div');
+        box.className = 'qspan';
+        var label = document.createElement('div');
+        label.className = 'qlabel';
+        label.appendChild(document.createTextNode(info.book[1] + ' ' + info.chapter + ':' + (span.v1 === span.v2 ? span.v1 : span.v1 + '\u2013' + span.v2) + '  '));
+        label.appendChild(readLink(group.id, view.first.frag, view.first.line, view.first.pos, 'read in context'));
+        box.appendChild(label);
+        view.lines.forEach(function (line) {
+          var row = document.createElement('div');
+          row.className = 'qline';
+          var num = document.createElement('span');
+          num.className = 'num';
+          num.textContent = line.frag.replace(/^f/, '') + ':' + line.line;
+          var text = document.createElement('p');
+          text.className = 'rt';
+          text.dir = 'rtl';
+          text.lang = 'he';
+          line.items.forEach(function (item) {
+            var node = wordNode(item);
+            if (item.q) node.classList.add('q');
+            text.appendChild(node);
+            text.appendChild(document.createTextNode(' '));
+          });
+          row.appendChild(num);
+          row.appendChild(text);
+          box.appendChild(row);
+        });
+        details.appendChild(box);
+      });
+      els.parQuoteList.appendChild(details);
+    });
+  }
+
+  els.parBook.addEventListener('change', function () {
+    par.verse = null;
+    fillChapters();
+    setHash(els.parBook.value ? new URLSearchParams({ parallels: els.parBook.value }).toString() : 'parallels=');
+  });
+  els.parChapter.addEventListener('change', function () {
+    par.verse = null;
+    if (!els.parChapter.value) { setHash(new URLSearchParams({ parallels: els.parBook.value }).toString()); return; }
+    setHash(parallelsHash());
+  });
+  els.parHideRec.addEventListener('change', function () { if (par.chapter !== null) renderParallels(false); });
+  els.parQuotes.addEventListener('change', function () { if (par.chapter !== null) renderParallels(false); });
 
   // ------------------------------------------------------------------ wiring
 

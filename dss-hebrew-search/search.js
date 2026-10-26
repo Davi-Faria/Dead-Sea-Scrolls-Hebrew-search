@@ -421,6 +421,162 @@
     return out;
   }
 
+  // -------------------------------------------------------- biblical parallels
+
+  /**
+   * Tables for the Parallels tab, built from data/bible.json:
+   *   segments  [line, book, chapter, verse, first word, end word]
+   *   quotes    [line, first word, end word, book, chapter, first verse, last verse, span]
+   */
+  function buildBibleIndex(bible, data) {
+    var byChapter = {};   // 'book:chapter' -> { scroll -> { verse -> [[line, start, end], ...] } }
+    var chapters = {};    // book index -> { chapter -> true }
+    var quotesBy = {};    // 'book:chapter' -> quote records
+    function noteChapter(b, ch) { (chapters[b] = chapters[b] || {})[ch] = true; }
+    bible.segments.forEach(function (seg) {
+      var scroll = data.lines[seg[0]][0];
+      var key = seg[1] + ':' + seg[2];
+      var entry = byChapter[key] || (byChapter[key] = {});
+      var verses = entry[scroll] || (entry[scroll] = {});
+      (verses[seg[3]] = verses[seg[3]] || []).push([seg[0], seg[4], seg[5]]);
+      noteChapter(seg[1], seg[2]);
+    });
+    bible.quotes.forEach(function (q) {
+      var key = q[3] + ':' + q[4];
+      (quotesBy[key] = quotesBy[key] || []).push(q);
+      noteChapter(q[3], q[4]);
+    });
+    var bookIndex = {};
+    bible.books.forEach(function (b, i) { bookIndex[b[0]] = i; });
+    return { books: bible.books, bookIndex: bookIndex, byChapter: byChapter, chapters: chapters, quotesBy: quotesBy };
+  }
+
+  /** Chapters of a book that have text or quotations: [{ chapter, manuscripts, quotes }] in order. */
+  function bibleChapters(bib, bookIndex) {
+    var list = Object.keys(bib.chapters[bookIndex] || {}).map(Number).sort(function (a, b) { return a - b; });
+    return list.map(function (ch) {
+      var key = bookIndex + ':' + ch;
+      var spans = {};
+      (bib.quotesBy[key] || []).forEach(function (q) { spans[q[7]] = true; });
+      return { chapter: ch, manuscripts: Object.keys(bib.byChapter[key] || {}).length, quotes: Object.keys(spans).length };
+    });
+  }
+
+  /** Order scroll ids by cave number, then naturally (4Q55 before 4Q56 before 4Q100). */
+  function compareScrollIds(a, b) {
+    var ca = /^(\d+)Q/i.exec(a), cb = /^(\d+)Q/i.exec(b);
+    var na = ca ? parseInt(ca[1], 10) : 999, nb = cb ? parseInt(cb[1], 10) : 999;
+    if (na !== nb) return na - nb;
+    var pa = a.match(/\d+|\D+/g) || [], pb = b.match(/\d+|\D+/g) || [];
+    for (var i = 0; i < Math.min(pa.length, pb.length); i++) {
+      if (pa[i] === pb[i]) continue;
+      var xa = /^\d/.test(pa[i]), xb = /^\d/.test(pb[i]);
+      if (xa && xb) return parseInt(pa[i], 10) - parseInt(pb[i], 10);
+      return pa[i] < pb[i] ? -1 : 1;
+    }
+    return pa.length - pb.length;
+  }
+
+  /** 'Is 61:1' -> { code: 'Is', chapter: 61, verse: 1 }, or null. */
+  function parseBibleRef(ref) {
+    var m = /^(\S+)\s+(\d+):(\d+)$/.exec(String(ref || '').trim());
+    return m ? { code: m[1], chapter: parseInt(m[2], 10), verse: parseInt(m[3], 10) } : null;
+  }
+
+  function shortFragment(label) {
+    return label.charAt(0) === 'f' ? label.slice(1).replace(/_/g, '\u2013') : label;
+  }
+
+  /** Where a verse sits in a manuscript, for a caption and a link: { label, frag, line }. */
+  function whereIs(data, segs) {
+    var first = data.lines[segs[0][0]];
+    var last = data.lines[segs[segs.length - 1][0]];
+    var label = shortFragment(first[1]) + ':' + first[2];
+    if (segs.length > 1 && (last[1] !== first[1] || last[2] !== first[2])) {
+      label += last[1] === first[1] ? '\u2013' + last[2] : '\u2013' + shortFragment(last[1]) + ':' + last[2];
+    }
+    return { label: label, frag: first[1], line: first[2], pos: segs[0][1] };
+  }
+
+  /**
+   * Everything the Parallels tab shows for one chapter:
+   * { book, chapter, witnesses: [{ scroll, id, verses, verseList, first, last }], verses: [...], quotes: [...] }
+   * `names` is the optional map from scroll id to a common name.
+   */
+  function chapterParallels(data, bib, bookIndex, chapter, names) {
+    names = names || {};
+    var key = bookIndex + ':' + chapter;
+    var entry = bib.byChapter[key] || {};
+    var witnesses = Object.keys(entry).map(function (scroll) {
+      var verses = entry[scroll];
+      var list = Object.keys(verses).map(Number).sort(function (a, b) { return a - b; });
+      var id = data.scrolls[scroll];
+      return { scroll: Number(scroll), id: id, name: names[id] || '', verses: verses, verseList: list,
+               first: list[0], last: list[list.length - 1] };
+    });
+    witnesses.sort(function (a, b) { return compareScrollIds(a.id, b.id); });
+    var seen = {};
+    witnesses.forEach(function (w) { w.verseList.forEach(function (v) { seen[v] = true; }); });
+    var verses = Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+
+    // Quotations elsewhere, grouped by scroll and then by quotation (span).
+    var byScroll = {};
+    (bib.quotesBy[key] || []).forEach(function (q) {
+      var scroll = data.lines[q[0]][0];
+      var spans = byScroll[scroll] || (byScroll[scroll] = {});
+      var span = spans[q[7]] || (spans[q[7]] = { span: q[7], v1: q[5], v2: q[6], records: [] });
+      span.records.push(q);
+    });
+    var quotes = Object.keys(byScroll).map(function (scroll) {
+      var spans = Object.keys(byScroll[scroll]).map(function (k) { return byScroll[scroll][k]; });
+      spans.sort(function (a, b) { return a.records[0][0] - b.records[0][0] || a.records[0][1] - b.records[0][1]; });
+      var id = data.scrolls[scroll];
+      return { scroll: Number(scroll), id: id, name: names[id] || '', spans: spans };
+    });
+    quotes.sort(function (a, b) { return compareScrollIds(a.id, b.id); });
+    return { book: bib.books[bookIndex], chapter: chapter, witnesses: witnesses, verses: verses, quotes: quotes };
+  }
+
+  /**
+   * The words of one verse in one manuscript, as [{ t, s, li, pos }] (with { br: true } where a
+   * new line starts). With hideReconstructed, a run of fully reconstructed words becomes one { gap: true }.
+   */
+  function verseItems(data, segs, hideReconstructed) {
+    var out = [];
+    segs.forEach(function (seg, k) {
+      var line = data.lines[seg[0]];
+      if (k > 0 && segs[k - 1][0] !== seg[0]) out.push({ br: true });
+      for (var p = seg[1]; p < seg[2]; p++) {
+        var status = line[5].charAt(p);
+        if (hideReconstructed && (statusValue(status) & REC_FULL)) {
+          if (!out.length || !out[out.length - 1].gap) out.push({ gap: true });
+          continue;
+        }
+        out.push({ t: line[3][p], s: status, li: seg[0], pos: p });
+      }
+    });
+    return out;
+  }
+
+  /**
+   * The lines of one quotation with the quoted words marked:
+   * { lines: [{ li, frag, line, items: [{ t, s, q }] }], first: { frag, line, pos } }.
+   */
+  function quoteView(data, records) {
+    var byLine = {};
+    records.forEach(function (r) { (byLine[r[0]] = byLine[r[0]] || []).push(r); });
+    var lis = Object.keys(byLine).map(Number).sort(function (a, b) { return a - b; });
+    var lines = lis.map(function (li) {
+      var line = data.lines[li];
+      var items = line[3].map(function (w, p) { return { t: w, s: line[5].charAt(p), q: false }; });
+      byLine[li].forEach(function (r) { for (var p = r[1]; p < r[2]; p++) items[p].q = true; });
+      return { li: li, frag: line[1], line: line[2], items: items };
+    });
+    var firstRecord = byLine[lis[0]][0];
+    var firstLine = data.lines[lis[0]];
+    return { lines: lines, first: { frag: firstLine[1], line: firstLine[2], pos: firstRecord[1] } };
+  }
+
   return {
     normalizeHebrew: normalizeHebrew,
     normalizeRegexSource: normalizeRegexSource,
@@ -436,6 +592,14 @@
     groupScrolls: groupScrolls,
     fragmentTitle: fragmentTitle,
     getFragments: getFragments,
-    readerLine: readerLine
+    readerLine: readerLine,
+    buildBibleIndex: buildBibleIndex,
+    bibleChapters: bibleChapters,
+    compareScrollIds: compareScrollIds,
+    parseBibleRef: parseBibleRef,
+    whereIs: whereIs,
+    chapterParallels: chapterParallels,
+    verseItems: verseItems,
+    quoteView: quoteView
   };
 }));

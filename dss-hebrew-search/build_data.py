@@ -73,6 +73,22 @@ def hebrew_letters(text):
     return "".join(HEBREW_LETTER.findall(unicodedata.normalize("NFD", text or "")))
 
 
+# Book codes the dataset uses for passages it has placed in a biblical book. Other values of its
+# 'book' feature (for example '1Q4') are manuscripts it could not place, with no chapter or verse.
+BOOK_CODES = [
+    "Gen", "Ex", "Lev", "Num", "Deut", "Josh", "Judg", "1Sam", "2Sam", "1Kgs", "2Kgs", "Is", "Jer", "Ezek",
+    "Hos", "Joel", "Amos", "Obad", "Jonah", "Mic", "Nah", "Hab", "Zeph", "Hag", "Zech", "Mal",
+    "Ps", "Job", "Prov", "Ruth", "Song", "Eccl", "Lam", "Esth", "Dan", "Ezra", "Neh", "1Chr", "2Chr",
+]
+
+
+def bible_ref(book, chapter, verse):
+    """(book, chapter, verse) as numbers for a placed biblical passage, else None."""
+    if book in BOOK_CODES and str(chapter).isdigit() and str(verse).isdigit():
+        return (book, int(chapter), int(verse))
+    return None
+
+
 def display_text(glyph, full, lang):
     """The text of one token as shown on the page."""
     raw = glyph or full or ""
@@ -106,7 +122,24 @@ def merge_tokens(parts):
         all_full = all(f & BIT_REC_FULL for f in rec_flags)
         bits |= BIT_REC_FULL if all_full else BIT_REC_PART
 
-    return {"text": text, "lemma": stem["lemma"] if stem else None, "lang": lang, "bits": bits}
+    # Bible reference (book, chapter, verse) of the word, from the stem or the first part that has one.
+    ref = (stem or {}).get("ref") or next((p.get("ref") for p in parts if p.get("ref")), None)
+
+    return {"text": text, "lemma": stem["lemma"] if stem else None, "lang": lang, "bits": bits, "ref": ref}
+
+
+def verse_segments(line_index, words):
+    """Runs of words that share a Bible reference: [line, book, chapter, verse, start, end]."""
+    out, start, current = [], 0, None
+    for i, word in enumerate(words):
+        ref = word.get("ref")
+        if ref != current:
+            if current is not None:
+                out.append([line_index, current[0], current[1], current[2], start, i])
+            current, start = ref, i
+    if current is not None:
+        out.append([line_index, current[0], current[1], current[2], start, len(words)])
+    return out
 
 
 def group_tokens(tokens):
@@ -189,9 +222,11 @@ def build(tf_dir, ref):
             "lang": F.lang.v(w),
             "bits": bits,
             "after": F.after.v(w),
+            "ref": bible_ref(F.book.v(w), F.chapter.v(w), F.verse.v(w)),
         }
 
     scrolls, lemma_ids, lemma_list, lines = [], {}, [], []
+    segments = []   # [line, book, chapter, verse, first word, end word] for placed biblical text
     n_words = 0
     print("Converting scrolls ...", flush=True)
     for sc in F.otype.s("scroll"):
@@ -221,6 +256,7 @@ def build(tf_dir, ref):
                     first = next((w for w in L.d(ln, "word") if F.book.v(w)), None)
                     if first is not None:
                         bref = f"{F.book.v(first)} {F.chapter.v(first)}:{F.verse.v(first)}"
+                segments.extend(verse_segments(len(lines), words))
                 lines.append([
                     scroll_index,
                     frag_label,
@@ -234,6 +270,7 @@ def build(tf_dir, ref):
                 n_words += len(words)
 
     return {
+        "segments": segments,
         "meta": {
             "source": "CACCHT Dead Sea Scrolls dataset (ETCBC/dss), based on data files of Martin G. Abegg",
             "url": "https://github.com/ETCBC/dss",
@@ -260,6 +297,7 @@ def main():
 
     tf_dir = Path(args.tf_dir) if args.tf_dir else download_features(args.cache, args.ref, args.version)
     data = build(tf_dir, args.ref if not args.tf_dir else "local")
+    segments = data.pop("segments")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +306,15 @@ def main():
     size_mb = out.stat().st_size / 1e6
     print(f"Wrote {out} ({size_mb:.1f} MB): {data['meta']['words']:,} words in "
           f"{data['meta']['lines']:,} lines, {len(data['scrolls'])} scrolls, {len(data['lemmas']):,} lexemes.")
+
+    # Data for the Parallels tab: verse segments and detected quotations.
+    from bible_parallels import build_bible
+    bible = build_bible(data, segments)
+    bible_out = out.with_name("bible.json")
+    with bible_out.open("w", encoding="utf-8") as handle:
+        json.dump(bible, handle, ensure_ascii=False, separators=(",", ":"))
+    print(f"Wrote {bible_out} ({bible_out.stat().st_size / 1e6:.1f} MB): {bible['meta']['segments']:,} verse segments "
+          f"in {len(bible['books'])} books, {bible['meta']['quotes']:,} quotations found in other texts.")
 
 
 if __name__ == "__main__":

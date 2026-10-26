@@ -1,6 +1,6 @@
 # Data
 
-`dss.json` is a compact export of the **CACCHT Dead Sea Scrolls dataset**
+`dss.json` and `bible.json` are compact exports of the **CACCHT Dead Sea Scrolls dataset**
 (<https://github.com/ETCBC/dss>), which is based on data files of Martin G. Abegg, Jr.
 It was converted by Jarod Jacobs, Martijn Naaijer and Dirk Roorda
 (ETCBC / CACCHT project) and is distributed by them under the
@@ -11,7 +11,7 @@ What that means for this repository:
 
 - You may share and adapt `dss.json` with attribution, **for non-commercial purposes only**.
 - The MIT license of the code does **not** apply to `dss.json`.
-- This file is an adapted version: prefixes are joined to their words, text-critical marks
+- These files are adapted versions: prefixes are joined to their words, text-critical marks
   are reduced to per-word status flags, and only the fields listed in the README are kept.
 - Please also credit the dataset when you use search results in publications. The ETCBC/dss
   README explains how to cite it.
@@ -20,3 +20,5 @@ What that means for this repository:
 of the dataset; corrections and additions are welcome.
 
 Built from ETCBC/dss commit `ac91a978d630f426e327f88eb0eeb85d6e67210a` (dataset version 2.0.1).
+
+`bible.json` lines up biblical manuscripts by verse (from the dataset's own labels) and lists stretches of other texts that match biblical verses. The matches are found by this project's own comparison and are not part of the original dataset.

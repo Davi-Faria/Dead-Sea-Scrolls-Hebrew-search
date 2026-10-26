@@ -10,12 +10,13 @@
 <body>
   <header class="page-head">
     <h1>Dead Sea Scrolls Hebrew search</h1>
-    <p>Look up a word in the transcribed Hebrew and Aramaic text of the scrolls, or read a whole manuscript.</p>
+    <p>Look up a word in the transcribed Hebrew and Aramaic text of the scrolls, read a whole manuscript, or compare the manuscripts of a biblical chapter.</p>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button type="button" role="tab" id="tab-btn-search" aria-controls="tab-search" aria-selected="true" data-tab="search">Search</button>
     <button type="button" role="tab" id="tab-btn-read" aria-controls="tab-read" aria-selected="false" data-tab="read" tabindex="-1">Read</button>
+    <button type="button" role="tab" id="tab-btn-parallels" aria-controls="tab-parallels" aria-selected="false" data-tab="parallels" tabindex="-1">Biblical parallels</button>
   </nav>
 
   <main>
@@ -153,6 +154,46 @@
         </article>
       </div>
     </section>
+
+    <!-- ================================================== Biblical parallels -->
+    <section id="tab-parallels" role="tabpanel" aria-labelledby="tab-btn-parallels" hidden>
+      <div class="par-controls">
+        <div class="field">
+          <label for="par-book">Book</label>
+          <select id="par-book" disabled></select>
+        </div>
+        <div class="field">
+          <label for="par-chapter">Chapter</label>
+          <select id="par-chapter" disabled></select>
+        </div>
+        <div class="field check">
+          <label><input type="checkbox" id="par-hide-rec" disabled> Hide fully reconstructed words</label>
+        </div>
+        <div class="field check">
+          <label><input type="checkbox" id="par-quotes" checked disabled> Show quotations in other texts</label>
+        </div>
+      </div>
+      <details id="par-mss" hidden>
+        <summary id="par-mss-summary">Manuscripts</summary>
+        <div id="par-mss-list"></div>
+      </details>
+
+      <p id="par-empty">Choose a book and chapter to compare manuscripts and see where other texts quote it.</p>
+
+      <div id="par-body" hidden>
+        <h2 id="par-title"></h2>
+        <p id="par-meta"></p>
+        <div class="par-wrap">
+          <table class="par-table" id="par-table"></table>
+        </div>
+        <section id="par-quote-section">
+          <h3>Quoted or echoed in other texts</h3>
+          <p class="par-note" id="par-quote-count"></p>
+          <p class="par-note">Found automatically by matching four or more words in a row with a biblical verse, so it covers pesharim, the Melchizedek text and rewritten Torah, but also shorter echoes and a few false matches. Use it as a guide, not an edition.</p>
+          <div id="par-quote-list"></div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <footer class="page-foot">
@@ -163,6 +204,7 @@
         <li><span class="rec">Faded in brackets</span>: reconstructed by an editor. <span class="rec-part">Dotted underline</span>: partly reconstructed. <span class="unc">Wavy underline</span>: uncertain letters. <span class="rem">Struck through</span>: removed by an editor. <span class="cor">Solid underline</span>: corrected.</li>
         <li>“Reconstructed text” in the search form leaves out hits that rest on editors’ reconstruction: a fully reconstructed word is one where every letter was supplied by an editor; the stricter option also drops words where only some letters were.</li>
         <li>The dataset writes prefixes (ו ה ב כ ל מ ש) as separate units; this page joins them to the word they belong to. A lexeme search uses the dataset’s own lexeme for each word, so it finds every inflected form.</li>
+        <li>The Biblical parallels tab lines manuscripts up verse by verse using the dataset’s own book, chapter and verse labels. Manuscripts the dataset could not place in a book are not included. Each cell links to that line in the Read tab.</li>
         <li>References are scroll, fragment or column, and line, as numbered in the dataset. They can differ by a line from printed editions, so check before you cite.</li>
         <li>Regular expressions run on the consonants only, with final letters changed to ordinary ones (ן → נ). Final letters in your pattern are changed the same way. For example, <code>^[והבלמ]?עינ</code> finds words that begin with an optional prefix and then עין.</li>
       </ul>

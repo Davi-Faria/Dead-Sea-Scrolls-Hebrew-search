@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import build_data as b  # noqa: E402
+import bible_parallels as bp  # noqa: E402
 
 
 def token(text, lemma=None, sp="subs", lang=None, bits=0, after=" "):
@@ -87,6 +88,58 @@ class Grouping(unittest.TestCase):
     def test_status_alphabet_has_room_for_all_flags(self):
         top = b.BIT_REC_PART | b.BIT_REC_FULL | b.BIT_UNC | b.BIT_COR | b.BIT_REM
         self.assertLess(top, len(b.B32))
+
+
+class BibleReferences(unittest.TestCase):
+    def test_placed_passages_get_numbers(self):
+        self.assertEqual(b.bible_ref("Is", "61", "1"), ("Is", 61, 1))
+
+    def test_unplaced_manuscripts_get_none(self):
+        self.assertIsNone(b.bible_ref("1Q4", "f2", "3"))
+        self.assertIsNone(b.bible_ref(None, None, None))
+
+    def test_a_word_takes_the_reference_of_its_stem(self):
+        word = b.merge_tokens([
+            dict(token("ו", "וְ", sp="ptcl", after=None), ref=("Is", 61, 1)),
+            dict(token("יען", "יען"), ref=("Is", 61, 1)),
+        ])
+        self.assertEqual(word["ref"], ("Is", 61, 1))
+
+    def test_verse_segments_split_where_the_verse_changes(self):
+        words = [{"ref": ("Is", 61, 1)}, {"ref": ("Is", 61, 1)}, {"ref": ("Is", 61, 2)},
+                 {"ref": None}, {"ref": ("Is", 61, 2)}]
+        self.assertEqual(b.verse_segments(7, words),
+                         [[7, "Is", 61, 1, 0, 2], [7, "Is", 61, 2, 2, 3], [7, "Is", 61, 2, 4, 5]])
+
+
+class QuotationDetection(unittest.TestCase):
+    LINES = [
+        [0, "1", "1", ["רוח", "אדני", "יהוה", "עלי", "יען", "משח"], [], "000000", 1, "Is 61:1"],
+        [1, "2", "1", ["פשרו", "אשר", "רוח", "אדני", "יהוה", "עלי", "יען", "ויאמר"], [], "00000000", 0, ""],
+    ]
+    SEGMENTS = [[0, "Is", 61, 1, 0, 6]]
+
+    def test_skeleton_ignores_vowel_letters_and_final_forms(self):
+        self.assertEqual(bp.skeleton("אדוני"), bp.skeleton("אדני"))
+        self.assertEqual(bp.skeleton("עין"), bp.skeleton("עינ"))
+
+    def test_a_four_word_match_is_found(self):
+        self.assertEqual(bp.find_quotes(self.LINES, self.SEGMENTS), [[1, 2, 7, "Is", 61, 1, 1, 1]])
+
+    def test_no_match_in_biblical_lines_themselves(self):
+        self.assertEqual([q for q in bp.find_quotes(self.LINES, self.SEGMENTS) if q[0] == 0], [])
+
+    def test_short_matches_are_ignored(self):
+        lines = [self.LINES[0], [1, "2", "1", ["פשרו", "רוח", "אדני", "יהוה"], [], "0000", 0, ""]]
+        self.assertEqual(bp.find_quotes(lines, self.SEGMENTS), [])
+
+    def test_quotation_can_run_over_two_lines(self):
+        lines = [self.LINES[0],
+                 [1, "2", "1", ["פשרו", "רוח", "אדני"], [], "000", 0, ""],
+                 [1, "2", "2", ["יהוה", "עלי", "יען"], [], "000", 0, ""]]
+        found = bp.find_quotes(lines, self.SEGMENTS)
+        self.assertEqual([(q[0], q[1], q[2]) for q in found], [(1, 1, 3), (2, 0, 3)])
+        self.assertEqual(len({q[7] for q in found}), 1)   # one span, two lines
 
 
 if __name__ == "__main__":

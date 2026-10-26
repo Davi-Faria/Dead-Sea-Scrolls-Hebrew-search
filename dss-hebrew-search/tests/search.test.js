@@ -273,3 +273,103 @@ test('real data: every scroll can be listed and 1QS can be read in column order'
   assert.strictEqual(frags[0].title, 'Column 1');
   assert.strictEqual(S.readerLine(data, frags[0].start, false)[0].t.length > 0, true);
 });
+
+// ------------------------------------------------------------- biblical parallels
+const bibData = {
+  scrolls: ['1Qisaa', '4Q56', '11Q13'],
+  lemmas: [], lemmaLang: [],
+  lines: [
+    [0, '51', '1', ['רוח', 'אדוני', 'יהוה', 'עלי'], [-1, -1, -1, -1], '0000', 1, 'Is 61:1'],
+    [0, '51', '2', ['יען', 'משח', 'יהוה', 'אתי', 'לבשר'], [-1, -1, -1, -1, -1], '00000', 1, 'Is 61:1'],
+    [0, '51', '3', ['לקרא', 'שנת', 'רצון'], [-1, -1, -1], '000', 1, 'Is 61:2'],
+    [1, 'f3', '5', ['רוח', 'אדוני', 'יהוה', 'עלי'], [-1, -1, -1, -1], '0220', 1, 'Is 61:1'],
+    [2, '2', '16', ['וזה', 'לקרא', 'שנת', 'רצון', 'ליהוה'], [-1, -1, -1, -1, -1], '00000', 0, '']
+  ]
+};
+const bible = {
+  books: [['Is', 'Isaiah']],
+  segments: [[0, 0, 61, 1, 0, 4], [1, 0, 61, 1, 0, 5], [2, 0, 61, 2, 0, 3], [3, 0, 61, 1, 0, 4]],
+  quotes: [[4, 1, 4, 0, 61, 2, 2, 7]]
+};
+const bi = S.buildBibleIndex(bible, bibData);
+
+test('compareScrollIds orders by cave then naturally', () => {
+  const ids = ['4Q100', 'CD', '1Qisaa', '11Q13', '4Q55', '4Q9'];
+  assert.deepStrictEqual(ids.slice().sort(S.compareScrollIds), ['1Qisaa', '4Q9', '4Q55', '4Q100', '11Q13', 'CD']);
+});
+
+test('parseBibleRef reads book, chapter and verse', () => {
+  assert.deepStrictEqual(S.parseBibleRef('Is 61:1'), { code: 'Is', chapter: 61, verse: 1 });
+  assert.deepStrictEqual(S.parseBibleRef('1Sam 3:10'), { code: '1Sam', chapter: 3, verse: 10 });
+  assert.strictEqual(S.parseBibleRef(''), null);
+  assert.strictEqual(S.parseBibleRef('Is 61'), null);
+});
+
+test('bibleChapters counts manuscripts and quotations per chapter', () => {
+  assert.deepStrictEqual(S.bibleChapters(bi, 0), [{ chapter: 61, manuscripts: 2, quotes: 1 }]);
+});
+
+test('chapterParallels lines manuscripts up verse by verse', () => {
+  const p = S.chapterParallels(bibData, bi, 0, 61, { '1Qisaa': 'Great Isaiah Scroll' });
+  assert.strictEqual(p.book[1], 'Isaiah');
+  assert.deepStrictEqual(p.witnesses.map((w) => w.id), ['1Qisaa', '4Q56']);
+  assert.strictEqual(p.witnesses[0].name, 'Great Isaiah Scroll');
+  assert.deepStrictEqual(p.verses, [1, 2]);
+  assert.deepStrictEqual(p.witnesses[0].verseList, [1, 2]);
+  assert.deepStrictEqual(p.witnesses[1].verseList, [1]);
+  assert.strictEqual(p.witnesses[0].verses[1].length, 2); // verse 1 runs over two lines
+});
+
+test('chapterParallels lists quotations by scroll', () => {
+  const p = S.chapterParallels(bibData, bi, 0, 61, {});
+  assert.strictEqual(p.quotes.length, 1);
+  assert.strictEqual(p.quotes[0].id, '11Q13');
+  assert.strictEqual(p.quotes[0].spans[0].v1, 2);
+});
+
+test('verseItems joins lines with a break and can hide reconstructed words', () => {
+  const p = S.chapterParallels(bibData, bi, 0, 61, {});
+  const items = S.verseItems(bibData, p.witnesses[0].verses[1], false);
+  assert.strictEqual(items.filter((x) => x.br).length, 1);
+  assert.strictEqual(items.filter((x) => x.t).length, 9);
+  const hidden = S.verseItems(bibData, p.witnesses[1].verses[1], true);
+  assert.deepStrictEqual(hidden.map((x) => (x.gap ? '…' : x.t)), ['רוח', '…', 'עלי']);
+});
+
+test('whereIs gives a label and a link target', () => {
+  const p = S.chapterParallels(bibData, bi, 0, 61, {});
+  const w = S.whereIs(bibData, p.witnesses[0].verses[1]);
+  assert.strictEqual(w.label, '51:1\u20132');
+  assert.deepStrictEqual([w.frag, w.line], ['51', '1']);
+  assert.strictEqual(S.whereIs(bibData, p.witnesses[1].verses[1]).label, '3:5');
+});
+
+test('quoteView marks the quoted words', () => {
+  const view = S.quoteView(bibData, [bible.quotes[0]]);
+  assert.strictEqual(view.lines.length, 1);
+  assert.deepStrictEqual(view.lines[0].items.map((x) => x.q), [false, true, true, true, false]);
+  assert.deepStrictEqual(view.first, { frag: '2', line: '16', pos: 1 });
+});
+
+test('real data: Isaiah 61 has four manuscripts and eleven verses', { skip: !fs.existsSync(dataFile) || !fs.existsSync(path.join(__dirname, '..', 'data', 'bible.json')) }, () => {
+  const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  const real = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'bible.json'), 'utf8'));
+  const index = S.buildBibleIndex(real, data);
+  const isaiah = index.bookIndex['Is'];
+  const p = S.chapterParallels(data, index, isaiah, 61, {});
+  assert.deepStrictEqual(p.witnesses.map((w) => w.id).sort(), ['1Q8', '1Qisaa', '4Q56', '4Q66']);
+  assert.deepStrictEqual(p.verses, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const great = p.witnesses.find((w) => w.id === '1Qisaa');
+  assert.strictEqual(great.verseList.length, 11);
+  const first = S.verseItems(data, great.verses[1], false);
+  assert.ok(first.length >= 20);
+});
+
+test('real data: Habakkuk 1 is quoted in the Pesher Habakkuk', { skip: !fs.existsSync(dataFile) || !fs.existsSync(path.join(__dirname, '..', 'data', 'bible.json')) }, () => {
+  const data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  const real = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'bible.json'), 'utf8'));
+  const index = S.buildBibleIndex(real, data);
+  const p = S.chapterParallels(data, index, index.bookIndex['Hab'], 1, {});
+  const pesher = p.quotes.find((q) => q.id === '1QpHab');
+  assert.ok(pesher && pesher.spans.length >= 5, 'the pesher quotes Habakkuk 1 several times');
+});
