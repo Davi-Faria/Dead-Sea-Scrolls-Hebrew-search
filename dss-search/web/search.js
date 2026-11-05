@@ -20,7 +20,7 @@
   var MARKS = /[\u0591-\u05c7]/g; // cantillation and vowel points
   var B32 = '0123456789abcdefghijklmnopqrstuv';
 
-  // Status bits, one character per word in the data (see build_data.py).
+  // Status bits, one character per word in the data (see src/corpus.rs).
   var REC_PART = 1;  // some letters reconstructed by an editor
   var REC_FULL = 2;  // all letters reconstructed by an editor
 
@@ -291,7 +291,7 @@
     return starts.concat(contains).slice(0, limit || 12);
   }
 
-  /** Describe a status character from the data (see build_data.py) in words. */
+  /** Describe a status character from the data (see src/corpus.rs) in words. */
   function statusLabels(char) {
     var value = B32.indexOf(char);
     if (value < 0) return [];
@@ -421,6 +421,303 @@
     return out;
   }
 
+  // -------------------------------------------------------- biblical parallels
+
+  /**
+   * Tables for the Parallels tab, built from data/bible.json:
+   *   segments  [line, book, chapter, verse, first word, end word]
+   *   quotes    [line, first word, end word, book, chapter, first verse, last verse, span]
+   */
+  function buildBibleIndex(bible, data) {
+    var byChapter = {};   // 'book:chapter' -> { scroll -> { verse -> [[line, start, end], ...] } }
+    var chapters = {};    // book index -> { chapter -> true }
+    var quotesBy = {};    // 'book:chapter' -> quote records
+    function noteChapter(b, ch) { (chapters[b] = chapters[b] || {})[ch] = true; }
+    bible.segments.forEach(function (seg) {
+      var scroll = data.lines[seg[0]][0];
+      var key = seg[1] + ':' + seg[2];
+      var entry = byChapter[key] || (byChapter[key] = {});
+      var verses = entry[scroll] || (entry[scroll] = {});
+      (verses[seg[3]] = verses[seg[3]] || []).push([seg[0], seg[4], seg[5]]);
+      noteChapter(seg[1], seg[2]);
+    });
+    bible.quotes.forEach(function (q) {
+      var key = q[3] + ':' + q[4];
+      (quotesBy[key] = quotesBy[key] || []).push(q);
+      noteChapter(q[3], q[4]);
+    });
+    var bookIndex = {};
+    bible.books.forEach(function (b, i) { bookIndex[b[0]] = i; });
+    return { books: bible.books, bookIndex: bookIndex, byChapter: byChapter, chapters: chapters, quotesBy: quotesBy };
+  }
+
+  /** Chapters of a book that have text or quotations: [{ chapter, manuscripts, quotes }] in order. */
+  function bibleChapters(bib, bookIndex) {
+    var list = Object.keys(bib.chapters[bookIndex] || {}).map(Number).sort(function (a, b) { return a - b; });
+    return list.map(function (ch) {
+      var key = bookIndex + ':' + ch;
+      var spans = {};
+      (bib.quotesBy[key] || []).forEach(function (q) { spans[q[7]] = true; });
+      return { chapter: ch, manuscripts: Object.keys(bib.byChapter[key] || {}).length, quotes: Object.keys(spans).length };
+    });
+  }
+
+  /** Order scroll ids by cave number, then naturally (4Q55 before 4Q56 before 4Q100). */
+  function compareScrollIds(a, b) {
+    var ca = /^(\d+)Q/i.exec(a), cb = /^(\d+)Q/i.exec(b);
+    var na = ca ? parseInt(ca[1], 10) : 999, nb = cb ? parseInt(cb[1], 10) : 999;
+    if (na !== nb) return na - nb;
+    var pa = a.match(/\d+|\D+/g) || [], pb = b.match(/\d+|\D+/g) || [];
+    for (var i = 0; i < Math.min(pa.length, pb.length); i++) {
+      if (pa[i] === pb[i]) continue;
+      var xa = /^\d/.test(pa[i]), xb = /^\d/.test(pb[i]);
+      if (xa && xb) return parseInt(pa[i], 10) - parseInt(pb[i], 10);
+      return pa[i] < pb[i] ? -1 : 1;
+    }
+    return pa.length - pb.length;
+  }
+
+  /** 'Is 61:1' -> { code: 'Is', chapter: 61, verse: 1 }, or null. */
+  function parseBibleRef(ref) {
+    var m = /^(\S+)\s+(\d+):(\d+)$/.exec(String(ref || '').trim());
+    return m ? { code: m[1], chapter: parseInt(m[2], 10), verse: parseInt(m[3], 10) } : null;
+  }
+
+  function shortFragment(label) {
+    return label.charAt(0) === 'f' ? label.slice(1).replace(/_/g, '\u2013') : label;
+  }
+
+  /** Where a verse sits in a manuscript, for a caption and a link: { label, frag, line }. */
+  function whereIs(data, segs) {
+    var first = data.lines[segs[0][0]];
+    var last = data.lines[segs[segs.length - 1][0]];
+    var label = shortFragment(first[1]) + ':' + first[2];
+    if (segs.length > 1 && (last[1] !== first[1] || last[2] !== first[2])) {
+      label += last[1] === first[1] ? '\u2013' + last[2] : '\u2013' + shortFragment(last[1]) + ':' + last[2];
+    }
+    return { label: label, frag: first[1], line: first[2], pos: segs[0][1] };
+  }
+
+  /**
+   * Everything the Parallels tab shows for one chapter:
+   * { book, chapter, witnesses: [{ scroll, id, verses, verseList, first, last }], verses: [...], quotes: [...] }
+   * `names` is the optional map from scroll id to a common name.
+   */
+  function chapterParallels(data, bib, bookIndex, chapter, names) {
+    names = names || {};
+    var key = bookIndex + ':' + chapter;
+    var entry = bib.byChapter[key] || {};
+    var witnesses = Object.keys(entry).map(function (scroll) {
+      var verses = entry[scroll];
+      var list = Object.keys(verses).map(Number).sort(function (a, b) { return a - b; });
+      var id = data.scrolls[scroll];
+      return { scroll: Number(scroll), id: id, name: names[id] || '', verses: verses, verseList: list,
+               first: list[0], last: list[list.length - 1] };
+    });
+    witnesses.sort(function (a, b) { return compareScrollIds(a.id, b.id); });
+    var seen = {};
+    witnesses.forEach(function (w) { w.verseList.forEach(function (v) { seen[v] = true; }); });
+    var verses = Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+
+    // Quotations elsewhere, grouped by scroll and then by quotation (span).
+    var byScroll = {};
+    (bib.quotesBy[key] || []).forEach(function (q) {
+      var scroll = data.lines[q[0]][0];
+      var spans = byScroll[scroll] || (byScroll[scroll] = {});
+      var span = spans[q[7]] || (spans[q[7]] = { span: q[7], v1: q[5], v2: q[6], records: [] });
+      span.records.push(q);
+    });
+    var quotes = Object.keys(byScroll).map(function (scroll) {
+      var spans = Object.keys(byScroll[scroll]).map(function (k) { return byScroll[scroll][k]; });
+      spans.sort(function (a, b) { return a.records[0][0] - b.records[0][0] || a.records[0][1] - b.records[0][1]; });
+      var id = data.scrolls[scroll];
+      return { scroll: Number(scroll), id: id, name: names[id] || '', spans: spans };
+    });
+    quotes.sort(function (a, b) { return compareScrollIds(a.id, b.id); });
+    return { book: bib.books[bookIndex], chapter: chapter, witnesses: witnesses, verses: verses, quotes: quotes };
+  }
+
+  /**
+   * The words of one verse in one manuscript, as [{ t, s, li, pos }] (with { br: true } where a
+   * new line starts). With hideReconstructed, a run of fully reconstructed words becomes one { gap: true }.
+   */
+  function verseItems(data, segs, hideReconstructed) {
+    var out = [];
+    segs.forEach(function (seg, k) {
+      var line = data.lines[seg[0]];
+      if (k > 0 && segs[k - 1][0] !== seg[0]) out.push({ br: true });
+      for (var p = seg[1]; p < seg[2]; p++) {
+        var status = line[5].charAt(p);
+        if (hideReconstructed && (statusValue(status) & REC_FULL)) {
+          if (!out.length || !out[out.length - 1].gap) out.push({ gap: true });
+          continue;
+        }
+        out.push({ t: line[3][p], s: status, li: seg[0], pos: p });
+      }
+    });
+    return out;
+  }
+
+  /**
+   * The lines of one quotation with the quoted words marked:
+   * { lines: [{ li, frag, line, items: [{ t, s, q }] }], first: { frag, line, pos } }.
+   */
+  function quoteView(data, records) {
+    var byLine = {};
+    records.forEach(function (r) { (byLine[r[0]] = byLine[r[0]] || []).push(r); });
+    var lis = Object.keys(byLine).map(Number).sort(function (a, b) { return a - b; });
+    var lines = lis.map(function (li) {
+      var line = data.lines[li];
+      var items = line[3].map(function (w, p) { return { t: w, s: line[5].charAt(p), q: false }; });
+      byLine[li].forEach(function (r) { for (var p = r[1]; p < r[2]; p++) items[p].q = true; });
+      return { li: li, frag: line[1], line: line[2], items: items };
+    });
+    var firstRecord = byLine[lis[0]][0];
+    var firstLine = data.lines[lis[0]];
+    return { lines: lines, first: { frag: firstLine[1], line: firstLine[2], pos: firstRecord[1] } };
+  }
+
+  // ---------------------------------------------------------------- statistics tab
+  // The Statistics tab asks the local dss-search program for its numbers. These are the
+  // parts that need no server: which settings each analysis takes, their defaults (kept in step with
+  // DEFAULTS in src/query.rs by a test), the query string and page address for a set of settings,
+  // and what the columns of the answers mean.
+
+  var STATS_ENUMS = {
+    unit: ['lexeme', 'form'],
+    corpus: ['nonbib', 'bib', 'all'],
+    lang: ['any', 'h', 'a'],
+    rec: ['include', 'skipfull', 'skipany'],
+    by: ['scroll', 'cave'],
+    direction: ['over', 'under', 'both']
+  };
+  var STATS_COMMON_DEFAULTS = { unit: 'lexeme', corpus: 'nonbib', lang: 'any', rec: 'include' };
+  var STATS_TEXT_FIELDS = ['word', 'target', 'reference', 'scrolls', 'exclude'];
+  var STATS_NUMBER_LIMITS = { min: [1, 10000000], top: [0, 5000], window: [1, 30] };
+
+  // fields: the settings that matter to the analysis, besides unit, corpus, lang, rec and top.
+  var STATS = {
+    freq: {
+      label: 'Frequencies: most common words',
+      fields: ['scrolls', 'min', 'exclude'],
+      sorts: [],
+      defaults: { min: 1, top: 100 }
+    },
+    dist: {
+      label: 'Distribution: one word by scroll',
+      fields: ['word', 'by', 'sort', 'scrolls'],
+      sorts: [['count', 'Most occurrences'], ['order', 'Scroll order']],
+      defaults: { top: 0, by: 'scroll', sort: 'count' }
+    },
+    colloc: {
+      label: 'Collocations: words near a word',
+      fields: ['word', 'window', 'sort', 'scrolls', 'min', 'exclude'],
+      sorts: [['ll', 'Log-likelihood'], ['logdice', 'logDice'], ['count', 'Times near the word']],
+      defaults: { min: 3, top: 50, window: 4, sort: 'll' }
+    },
+    keyness: {
+      label: 'Keyness: words typical of scrolls',
+      fields: ['target', 'reference', 'direction', 'sort', 'min', 'exclude'],
+      sorts: [['ll', 'Log-likelihood (how sure)'], ['log_ratio', 'Log ratio (how big)']],
+      defaults: { min: 5, top: 50, sort: 'll', direction: 'over' }
+    }
+  };
+
+  // Every column an answer can contain. kind: int, dec1, dec2 (numbers), he (Hebrew), text.
+  var STATS_COLUMNS = {
+    rank: { label: '#', kind: 'int' },
+    item: { label: 'Word', kind: 'he' },
+    lang: { label: 'Lang.', kind: 'text', title: 'h Hebrew, a Aramaic' },
+    count: { label: 'Count', kind: 'int', title: 'Number of occurrences' },
+    per_million: { label: 'Per million', kind: 'dec1', title: 'Occurrences per million words in these scrolls' },
+    scrolls: { label: 'Scrolls', kind: 'int', title: 'Number of scrolls it occurs in' },
+    dp: { label: 'Spread', kind: 'dec2', title: 'Deviation of proportions: 0 means spread over the scrolls in proportion to their size, close to 1 means concentrated in a few' },
+    reconstructed: { label: 'Reconstructed', kind: 'int', title: 'Occurrences with letters supplied by an editor' },
+    left: { label: 'Left', kind: 'int', title: 'Times it stands before the word' },
+    right: { label: 'Right', kind: 'int', title: 'Times it stands after the word' },
+    freq: { label: 'In all', kind: 'int', title: 'Occurrences in all the scrolls counted' },
+    ll: { label: 'Log-likelihood', kind: 'dec1', title: 'Strength of the evidence that this is not chance; higher is stronger' },
+    logdice: { label: 'logDice', kind: 'dec1', title: 'Strength of attraction, at most 14; less swayed by very common words' },
+    target: { label: 'Target', kind: 'int', title: 'Occurrences in the target scrolls' },
+    reference: { label: 'Reference', kind: 'int', title: 'Occurrences in the reference scrolls' },
+    target_pm: { label: 'Target per million', kind: 'dec1' },
+    reference_pm: { label: 'Reference per million', kind: 'dec1' },
+    log_ratio: { label: 'Log ratio', kind: 'dec2', title: 'log2 of how many times more frequent in the target: +1 is twice as frequent, -1 is half as frequent' },
+    target_scrolls: { label: 'Target scrolls', kind: 'int' },
+    reference_scrolls: { label: 'Reference scrolls', kind: 'int' },
+    group: { label: 'Scroll', kind: 'text' },
+    name: { label: 'Name', kind: 'text' },
+    words: { label: 'Words', kind: 'int', title: 'Words counted in this scroll (or cave)' },
+    share: { label: 'Share of hits', kind: 'dec1', title: 'Percent of all occurrences that are here' }
+  };
+
+  function hasOwn(object, key) {
+    return Object.prototype.hasOwnProperty.call(object, key);
+  }
+
+  /** Every setting of an analysis at its default: {unit, corpus, lang, rec, top, ...}. Null if unknown. */
+  function statsDefaults(analysis) {
+    if (!hasOwn(STATS, analysis)) return null;
+    var spec = STATS[analysis];
+    var out = {};
+    Object.keys(STATS_COMMON_DEFAULTS).forEach(function (k) { out[k] = STATS_COMMON_DEFAULTS[k]; });
+    Object.keys(spec.defaults).forEach(function (k) { out[k] = spec.defaults[k]; });
+    STATS_TEXT_FIELDS.forEach(function (k) { if (spec.fields.indexOf(k) !== -1) out[k] = ''; });
+    return out;
+  }
+
+  /** The query string for the server and for the page address: only settings that matter to the analysis. */
+  function statsParams(analysis, options) {
+    var spec = STATS[analysis];
+    var params = new URLSearchParams();
+    Object.keys(STATS_COMMON_DEFAULTS).concat(['top'], spec.fields).forEach(function (key) {
+      var value = options[key];
+      if (value === undefined || value === null) return;
+      value = String(value).trim();
+      if (value !== '') params.set(key, value);
+    });
+    return params.toString();
+  }
+
+  /**
+   * Read settings from a page address (`stats=freq&unit=form...`). Anything missing or not valid falls
+   * back to the default. Returns { analysis, options }, or null when the address is not for this tab.
+   */
+  function parseStatsParams(params) {
+    var analysis = params.get('stats');
+    var options = statsDefaults(analysis);
+    if (!options) return null;
+    var spec = STATS[analysis];
+    Object.keys(options).forEach(function (key) {
+      var raw = params.get(key);
+      if (raw === null) return;
+      if (hasOwn(STATS_ENUMS, key)) {
+        if (STATS_ENUMS[key].indexOf(raw) !== -1) options[key] = raw;
+      } else if (key === 'sort') {
+        if (spec.sorts.some(function (s) { return s[0] === raw; })) options.sort = raw;
+      } else if (hasOwn(STATS_NUMBER_LIMITS, key)) {
+        var n = parseInt(raw, 10);
+        if (!isNaN(n)) options[key] = Math.max(STATS_NUMBER_LIMITS[key][0], Math.min(STATS_NUMBER_LIMITS[key][1], n));
+      } else {
+        options[key] = raw;
+      }
+    });
+    return { analysis: analysis, options: options };
+  }
+
+  /** What is still missing before an analysis can run, as a message, or '' if nothing. */
+  function statsMissing(analysis, options) {
+    if (analysis === 'dist' || analysis === 'colloc') {
+      var word = String(options.word || '').trim();
+      if (!normalizeHebrew(word)) return 'Enter a Hebrew word.';
+      if (/\s/.test(word)) return 'Give one word at a time.';
+    }
+    if (analysis === 'keyness' && !String(options.target || '').trim()) {
+      return 'Name at least one scroll for the target, for example 1QS.';
+    }
+    return '';
+  }
+
   return {
     normalizeHebrew: normalizeHebrew,
     normalizeRegexSource: normalizeRegexSource,
@@ -436,6 +733,20 @@
     groupScrolls: groupScrolls,
     fragmentTitle: fragmentTitle,
     getFragments: getFragments,
-    readerLine: readerLine
+    readerLine: readerLine,
+    buildBibleIndex: buildBibleIndex,
+    bibleChapters: bibleChapters,
+    compareScrollIds: compareScrollIds,
+    parseBibleRef: parseBibleRef,
+    whereIs: whereIs,
+    chapterParallels: chapterParallels,
+    verseItems: verseItems,
+    quoteView: quoteView,
+    statsAnalyses: STATS,
+    statsColumns: STATS_COLUMNS,
+    statsDefaults: statsDefaults,
+    statsParams: statsParams,
+    parseStatsParams: parseStatsParams,
+    statsMissing: statsMissing
   };
 }));

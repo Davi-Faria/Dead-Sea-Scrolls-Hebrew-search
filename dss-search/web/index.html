@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dead Sea Scrolls Hebrew search</title>
+  <meta name="description" content="Search and read the Hebrew and Aramaic text of the Dead Sea Scrolls.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Dead Sea Scrolls Hebrew search</h1>
+    <p>Look up a word in the transcribed Hebrew and Aramaic text of the scrolls, read a whole manuscript, compare the manuscripts of a biblical chapter, or count words and compare scrolls with statistics.</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tab-btn-search" aria-controls="tab-search" aria-selected="true" data-tab="search">Search</button>
+    <button type="button" role="tab" id="tab-btn-read" aria-controls="tab-read" aria-selected="false" data-tab="read" tabindex="-1">Read</button>
+    <button type="button" role="tab" id="tab-btn-parallels" aria-controls="tab-parallels" aria-selected="false" data-tab="parallels" tabindex="-1">Biblical parallels</button>
+    <button type="button" role="tab" id="tab-btn-stats" aria-controls="tab-stats" aria-selected="false" data-tab="stats" tabindex="-1">Statistics</button>
+  </nav>
+
+  <main>
+    <!-- ======================================================== Search -->
+    <section id="tab-search" role="tabpanel" aria-labelledby="tab-btn-search">
+      <form id="search-form" autocomplete="off">
+        <div class="query">
+          <label for="q">Hebrew word</label>
+          <div class="query-row">
+            <input id="q" type="text" dir="rtl" lang="he" spellcheck="false" placeholder="עין" disabled>
+            <button type="submit" class="primary" disabled>Search</button>
+          </div>
+        </div>
+
+        <details class="keyboard">
+          <summary>Hebrew keyboard</summary>
+          <div id="keys" dir="rtl" lang="he"></div>
+        </details>
+
+        <div class="options">
+          <div class="field">
+            <label for="mode">Match</label>
+            <select id="mode" disabled>
+              <option value="exact">Whole word</option>
+              <option value="prefixes">Whole word, with prefixes (ו ה ב כ ל מ ש)</option>
+              <option value="lexeme">Lexeme (all forms of the word)</option>
+              <option value="starts">Starts with</option>
+              <option value="ends">Ends with</option>
+              <option value="contains">Contains</option>
+              <option value="regex">Regular expression</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="corpus">Texts</label>
+            <select id="corpus" disabled>
+              <option value="nonbib">Non-biblical scrolls</option>
+              <option value="bib">Biblical scrolls</option>
+              <option value="all">All scrolls</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="scrolls">Scrolls</label>
+            <input id="scrolls" type="text" spellcheck="false" placeholder="all, or e.g. 1QS, CD, 4Q4*" disabled>
+          </div>
+          <div class="field">
+            <label for="lang">Language</label>
+            <select id="lang" disabled>
+              <option value="any">Hebrew and Aramaic</option>
+              <option value="h">Hebrew</option>
+              <option value="a">Aramaic</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="rec">Reconstructed text</label>
+            <select id="rec" disabled>
+              <option value="include">Include reconstructed words</option>
+              <option value="skipfull">Skip fully reconstructed words</option>
+              <option value="skipany">Skip any word with reconstructed letters</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ctx">Words of context</label>
+            <input id="ctx" type="number" min="0" max="30" value="6" disabled>
+          </div>
+        </div>
+      </form>
+
+      <p id="status" role="status" aria-live="polite">Loading the scroll data…</p>
+
+      <section id="summary" hidden>
+        <h2 id="summary-title"></h2>
+        <details id="by-scroll">
+          <summary>Hits by scroll</summary>
+          <ul id="scroll-list"></ul>
+        </details>
+        <button type="button" id="csv">Download all hits as CSV</button>
+      </section>
+
+      <ol id="results"></ol>
+      <button type="button" id="more" hidden>Show more</button>
+    </section>
+
+    <!-- ========================================================= Read -->
+    <section id="tab-read" role="tabpanel" aria-labelledby="tab-btn-read" hidden>
+      <div class="reader-layout">
+        <aside class="text-list" aria-label="Texts">
+          <div class="field">
+            <label for="text-filter">Find a text</label>
+            <input id="text-filter" type="search" spellcheck="false" placeholder="e.g. 1QS, Enoch, Temple" disabled>
+          </div>
+          <div class="field">
+            <label for="text-corpus">Show</label>
+            <select id="text-corpus" disabled>
+              <option value="nonbib">Non-biblical scrolls</option>
+              <option value="bib">Biblical scrolls</option>
+              <option value="all">All scrolls</option>
+            </select>
+          </div>
+          <div id="text-groups"></div>
+        </aside>
+
+        <article class="reader" aria-live="polite">
+          <p id="reader-empty">Choose a text from the list to read it.</p>
+          <div id="reader-body" hidden>
+            <h2 id="reader-title"></h2>
+            <p id="reader-meta"></p>
+
+            <div class="reader-controls">
+              <div class="field">
+                <label for="reader-view">View</label>
+                <select id="reader-view">
+                  <option value="whole">Whole manuscript</option>
+                  <option value="one">One column or fragment at a time</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="reader-jump">Go to</label>
+                <select id="reader-jump"></select>
+              </div>
+              <div class="field pager">
+                <button type="button" id="reader-prev">Previous</button>
+                <button type="button" id="reader-next">Next</button>
+              </div>
+              <div class="field check">
+                <label><input type="checkbox" id="reader-hide-rec"> Hide fully reconstructed words</label>
+              </div>
+              <div class="field">
+                <button type="button" id="reader-search">Search in this text</button>
+              </div>
+            </div>
+            <p class="reader-hint">Click a word to search for all forms of it. Hover to see its lexeme.</p>
+
+            <div id="reader-text" dir="rtl" lang="he"></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================================================== Biblical parallels -->
+    <section id="tab-parallels" role="tabpanel" aria-labelledby="tab-btn-parallels" hidden>
+      <div class="par-controls">
+        <div class="field">
+          <label for="par-book">Book</label>
+          <select id="par-book" disabled></select>
+        </div>
+        <div class="field">
+          <label for="par-chapter">Chapter</label>
+          <select id="par-chapter" disabled></select>
+        </div>
+        <div class="field check">
+          <label><input type="checkbox" id="par-hide-rec" disabled> Hide fully reconstructed words</label>
+        </div>
+        <div class="field check">
+          <label><input type="checkbox" id="par-quotes" checked disabled> Show quotations in other texts</label>
+        </div>
+      </div>
+      <details id="par-mss" hidden>
+        <summary id="par-mss-summary">Manuscripts</summary>
+        <div id="par-mss-list"></div>
+      </details>
+
+      <p id="par-empty">Choose a book and chapter to compare manuscripts and see where other texts quote it.</p>
+
+      <div id="par-body" hidden>
+        <h2 id="par-title"></h2>
+        <p id="par-meta"></p>
+        <div class="par-wrap">
+          <table class="par-table" id="par-table"></table>
+        </div>
+        <section id="par-quote-section">
+          <h3>Quoted or echoed in other texts</h3>
+          <p class="par-note" id="par-quote-count"></p>
+          <p class="par-note">Found automatically by matching four or more words in a row with a biblical verse, so it covers pesharim, the Melchizedek text and rewritten Torah, but also shorter echoes and a few false matches. Use it as a guide, not an edition.</p>
+          <div id="par-quote-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ======================================================== Statistics -->
+    <section id="tab-stats" role="tabpanel" aria-labelledby="tab-btn-stats" hidden>
+      <p id="st-notice" class="st-notice" hidden></p>
+      <form id="st-form" autocomplete="off" novalidate>
+        <div class="st-main">
+          <div class="field st-analysis">
+            <label for="st-analysis">Analysis</label>
+            <select id="st-analysis"></select>
+          </div>
+          <div class="field st-word" data-field="word">
+            <label for="st-word">Hebrew word</label>
+            <input id="st-word" type="text" dir="rtl" lang="he" spellcheck="false" placeholder="יחד">
+          </div>
+          <div class="field st-scrolls" data-field="target" hidden>
+            <label for="st-target">Describe these scrolls</label>
+            <input id="st-target" type="text" spellcheck="false" placeholder="e.g. 1QS, or 4Q26*">
+          </div>
+          <div class="field st-scrolls" data-field="reference" hidden>
+            <label for="st-reference">Compare with</label>
+            <input id="st-reference" type="text" spellcheck="false" placeholder="all other scrolls">
+          </div>
+          <button type="submit" class="primary" id="st-run">Run</button>
+        </div>
+
+        <details class="keyboard" data-field="word exclude">
+          <summary>Hebrew keyboard</summary>
+          <div id="st-keys" dir="rtl" lang="he"></div>
+        </details>
+
+        <div class="options st-options">
+          <div class="field">
+            <label for="st-unit">Count</label>
+            <select id="st-unit">
+              <option value="lexeme">Lexemes (all forms together)</option>
+              <option value="form">Words as written</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="st-corpus">Texts</label>
+            <select id="st-corpus">
+              <option value="nonbib">Non-biblical scrolls</option>
+              <option value="bib">Biblical scrolls</option>
+              <option value="all">All scrolls</option>
+            </select>
+          </div>
+          <div class="field" data-field="by" hidden>
+            <label for="st-by">Group by</label>
+            <select id="st-by">
+              <option value="scroll">Scroll</option>
+              <option value="cave">Cave</option>
+            </select>
+          </div>
+          <div class="field" data-field="window" hidden>
+            <label for="st-window">Words on each side</label>
+            <input id="st-window" type="number" min="1" max="30" value="4">
+          </div>
+          <div class="field" data-field="direction" hidden>
+            <label for="st-direction">Show words the scrolls use</label>
+            <select id="st-direction">
+              <option value="over">More than the others</option>
+              <option value="under">Less than the others</option>
+              <option value="both">More or less</option>
+            </select>
+          </div>
+        </div>
+
+        <details class="st-more">
+          <summary>More settings</summary>
+          <div class="options">
+            <div class="field" data-field="scrolls">
+              <label for="st-scrolls">Only these scrolls</label>
+              <input id="st-scrolls" type="text" spellcheck="false" placeholder="all, or e.g. 1QS, CD, 4Q4*">
+            </div>
+            <div class="field">
+              <label for="st-lang">Language</label>
+              <select id="st-lang">
+                <option value="any">Hebrew and Aramaic</option>
+                <option value="h">Hebrew</option>
+                <option value="a">Aramaic</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="st-rec">Reconstructed text</label>
+              <select id="st-rec">
+                <option value="include">Include reconstructed words</option>
+                <option value="skipfull">Skip fully reconstructed words</option>
+                <option value="skipany">Skip any word with reconstructed letters</option>
+              </select>
+            </div>
+            <div class="field" data-field="sort">
+              <label for="st-sort">Rank by</label>
+              <select id="st-sort"></select>
+            </div>
+            <div class="field" data-field="min">
+              <label for="st-min">Smallest count to list</label>
+              <input id="st-min" type="number" min="1" value="1">
+            </div>
+            <div class="field">
+              <label for="st-top">Rows</label>
+              <select id="st-top">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+                <option value="0">All</option>
+              </select>
+            </div>
+            <div class="field" data-field="exclude">
+              <label for="st-exclude">Hide these words</label>
+              <input id="st-exclude" type="text" dir="rtl" lang="he" spellcheck="false" placeholder="e.g. כל אשר את ם א">
+            </div>
+          </div>
+        </details>
+      </form>
+
+      <p id="st-status" role="status" aria-live="polite"></p>
+
+      <section id="st-result" hidden>
+        <h2 id="st-title"></h2>
+        <p id="st-meta"></p>
+        <div class="st-wrap">
+          <table class="st-table" id="st-table"></table>
+        </div>
+        <p class="st-actions"><a id="st-csv" class="button" download>Download all rows as CSV</a></p>
+        <p id="st-notes" class="st-note"></p>
+      </section>
+    </section>
+  </main>
+
+  <footer class="page-foot">
+    <details>
+      <summary>How to read the results</summary>
+      <ul>
+        <li>The highlighted word is the hit; the words around it come from the same scroll fragment. A <span class="legend-br">/</span> marks the end of a line.</li>
+        <li><span class="rec">Faded in brackets</span>: reconstructed by an editor. <span class="rec-part">Dotted underline</span>: partly reconstructed. <span class="unc">Wavy underline</span>: uncertain letters. <span class="rem">Struck through</span>: removed by an editor. <span class="cor">Solid underline</span>: corrected.</li>
+        <li>“Reconstructed text” in the search form leaves out hits that rest on editors’ reconstruction: a fully reconstructed word is one where every letter was supplied by an editor; the stricter option also drops words where only some letters were.</li>
+        <li>The dataset writes prefixes (ו ה ב כ ל מ ש) as separate units; this page joins them to the word they belong to. A lexeme search uses the dataset’s own lexeme for each word, so it finds every inflected form.</li>
+        <li>The Biblical parallels tab lines manuscripts up verse by verse using the dataset’s own book, chapter and verse labels. Manuscripts the dataset could not place in a book are not included. Each cell links to that line in the Read tab.</li>
+        <li>The Statistics tab asks the dss-search program on your computer for its numbers, so it works when the page is opened through that program but not from a saved copy of the page or an ordinary web server; there the tab says so and the other tabs are unaffected. It uses the same texts, scroll, language and reconstructed-text settings as the Search tab, so searching for a word with the same settings gives the same count.</li>
+        <li>Reading the statistics. <em>Per million</em> is the rate among the words counted. <em>Spread</em> is 0 for a word spread over the scrolls in proportion to their size and close to 1 for one found in only a few. <em>Log-likelihood</em> measures how sure we can be that a difference or attraction is not chance; <em>logDice</em> measures attraction on a scale up to 14 and is less swayed by very common words; <em>log ratio</em> is how many times more (+1 is twice) frequent a word is in the target scrolls. For collocations, “near” means within the chosen number of words in the same column or fragment, stopping at a gap, a lacuna marker or a verse-end sign.</li>
+        <li>The dataset gives single letters left over from damaged words (for example ם or א) lexemes of their own, so they can rank high in a frequency list. “Hide these words” removes them from a list without changing the totals.</li>
+        <li>References are scroll, fragment or column, and line, as numbered in the dataset. They can differ by a line from printed editions, so check before you cite.</li>
+        <li>Regular expressions run on the consonants only, with final letters changed to ordinary ones (ן → נ). Final letters in your pattern are changed the same way. For example, <code>^[והבלמ]?עינ</code> finds words that begin with an optional prefix and then עין.</li>
+      </ul>
+    </details>
+    <p id="source"></p>
+  </footer>
+
+  <script src="search.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
