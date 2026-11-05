@@ -1,0 +1,28 @@
+[package]
+name = "dss-search"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Search, read and analyse the Hebrew text of the Dead Sea Scrolls: one small offline program"
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+unicode-normalization = "0.1"
+clap = { version = "4", features = ["derive"] }
+tiny_http = "0.12"
+open = "5"
+# only for downloading the dataset when rebuilding the data (cargo build --features download)
+ureq = { version = "2", optional = true, features = ["native-certs"] }
+
+[features]
+default = []
+download = ["dep:ureq"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
