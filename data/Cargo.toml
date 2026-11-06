@@ -1,0 +1,48 @@
+[package]
+name = "dss-search"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Search, read and analyse the Hebrew text of the Dead Sea Scrolls: one small offline program with its own window"
+license = "MIT"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+unicode-normalization = "0.1"
+clap = { version = "4", features = ["derive"] }
+tiny_http = "0.12"
+# The window: the operating system's own web view, in a native window. Windows uses WebView2
+# (part of Windows 11 and current Windows 10), macOS uses WKWebView, Linux uses WebKitGTK.
+wry = { version = "0.57", optional = true }
+tao = { version = "0.37", optional = true }
+# opens links that lead out of the window in the system browser
+open = { version = "5", optional = true }
+# the "Save as" dialog
+rfd = { version = "0.17", default-features = false, features = ["gtk3"], optional = true }
+# decodes the window icon
+png = { version = "0.18", optional = true }
+
+# macOS needs an Edit menu before Cmd+C and Cmd+V work in a web view
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "0.19", optional = true }
+
+# only for downloading the dataset when rebuilding the data (cargo build --features download)
+[dependencies.ureq]
+version = "2"
+optional = true
+features = ["native-certs"]
+
+[features]
+default = ["window"]
+# Without it the program has no window and only starts the local server (`dss-search serve`)
+# and the command line; that needs no system libraries on Linux.
+window = ["dep:wry", "dep:tao", "dep:rfd", "dep:png", "dep:open", "dep:muda"]
+download = ["dep:ureq"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
