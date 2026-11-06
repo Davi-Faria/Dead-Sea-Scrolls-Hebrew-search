@@ -1,0 +1,6 @@
+{
+  "name": "dss-search-page-tests",
+  "private": true,
+  "description": "Drives the real page (web/) against a running `dss-search serve` in a simulated browser",
+  "devDependencies": { "jsdom": "^30.1.3" }
+}

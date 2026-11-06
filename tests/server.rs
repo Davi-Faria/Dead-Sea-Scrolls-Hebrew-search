@@ -19,7 +19,7 @@ impl Drop for Running {
 fn start() -> Running {
     // port 0: the operating system picks a free one, which the program then prints
     let mut child = Command::new(env!("CARGO_BIN_EXE_dss-search"))
-        .args(["--no-browser", "--port", "0"])
+        .args(["serve", "--port", "0"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
