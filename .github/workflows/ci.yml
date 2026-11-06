@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Node is only used by two checks: the page's own tests, and that the page and the program agree.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Tests (Rust)
+        run: cargo test --release
+      - name: Tests (JavaScript)
+        run: node --test
+        continue-on-error: true # there may be no tests/*.test.js in this repository yet
+
+  lint:
+    name: Format and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # a fixed version, so that a new release of Rust does not change what "formatted" means
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - name: Clippy (advice, does not fail the build)
+        run: cargo clippy --all-targets
+        continue-on-error: true
+
+  data:
+    name: The shipped data can be rebuilt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download the dataset and build the data again
+        run: cargo run --release --features download -- build --out rebuilt/dss.json
+      - name: It must be exactly what is in data/
+        run: |
+          cmp rebuilt/dss.json data/dss.json
+          cmp rebuilt/bible.json data/bible.json
+      - name: The rebuild test (compares field by field)
+        run: DSS_TF_DIR=.cache/dss-tf/2.0.1 cargo test --release --test builder

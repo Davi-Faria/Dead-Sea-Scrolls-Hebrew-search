@@ -1,0 +1,129 @@
+# Builds the program for Windows, macOS and Linux and puts the downloads on a GitHub release.
+#
+#   1. Raise `version` in Cargo.toml and commit.
+#   2. git tag v0.1.0 && git push origin v0.1.0     (the tag must be "v" + the version)
+#   3. Wait a few minutes: the release appears under "Releases" with the files and checksums.
+
+name: Release
+
+on:
+  push:
+    tags: ["v0.4.3"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "The tag ${GITHUB_REF_NAME} does not match the version $version in Cargo.toml" >&2
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, targets: x86_64-pc-windows-msvc }
+          - { name: macos, os: macos-latest, targets: "aarch64-apple-darwin x86_64-apple-darwin" }
+          - { name: linux-x64, os: ubuntu-latest, targets: x86_64-unknown-linux-musl }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl }
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add the targets
+        shell: bash
+        run: for t in ${{ matrix.targets }}; do rustup target add "$t"; done
+      - name: Tools for static Linux builds
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        shell: bash
+        run: for t in ${{ matrix.targets }}; do cargo build --release --locked --target "$t"; done
+
+      - name: Package
+        shell: bash
+        run: |
+          dir="dss-search-${VERSION}-${{ matrix.name }}"
+          mkdir "$dir"
+          cp README.md LICENSE.md "$dir/"
+          cp data/README.md "$dir/DATA-LICENSE.md"
+          case "${{ matrix.name }}" in
+            windows-x64)
+              cp "target/x86_64-pc-windows-msvc/release/dss-search.exe" "$dir/"
+              7z a -tzip "$dir.zip" "$dir" >/dev/null
+              echo "ASSET=$dir.zip" >> "$GITHUB_ENV"
+              ;;
+            macos)
+              # one program that runs on both Apple Silicon and Intel Macs
+              lipo -create -output "$dir/dss-search" \
+                target/aarch64-apple-darwin/release/dss-search target/x86_64-apple-darwin/release/dss-search
+              codesign --force --sign - "$dir/dss-search"   # ad hoc: Apple Silicon refuses unsigned programs
+              chmod +x "$dir/dss-search"
+              zip -r -y "$dir.zip" "$dir" >/dev/null
+              echo "ASSET=$dir.zip" >> "$GITHUB_ENV"
+              ;;
+            *)
+              t="${{ matrix.targets }}"
+              cp "target/$t/release/dss-search" "$dir/"
+              chmod +x "$dir/dss-search"
+              tar -czf "$dir.tar.gz" "$dir"
+              echo "ASSET=$dir.tar.gz" >> "$GITHUB_ENV"
+              ;;
+          esac
+      - name: A quick look that the program starts
+        shell: bash
+        run: |
+          dir="dss-search-${VERSION}-${{ matrix.name }}"
+          bin="$dir/dss-search"; [ -f "$dir/dss-search.exe" ] && bin="$dir/dss-search.exe"
+          "$bin" --version
+          "$bin" stats freq --top 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create or update the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --title "$tag" --generate-notes
+          fi
