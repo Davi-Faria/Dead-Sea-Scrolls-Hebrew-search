@@ -1,6 +1,6 @@
 # Dead Sea Scrolls Hebrew search
 
-A program for searching the Hebrew and Aramaic text of the Dead Sea Scrolls. It is **one file with nothing to install** (no Python, no packages, no internet connection needed): download it, start it, and the search page opens in your browser. Everything runs on your own computer.
+A program for searching the Hebrew and Aramaic text of the Dead Sea Scrolls. It is **one file with nothing to install** (no Python, no packages, no internet connection needed): download it, start it, and it opens in its own window, like any other application. Everything runs on your own computer.
 
 The **Search** tab finds every place a Hebrew word occurs, with the surrounding words, the scroll, fragment or column, and line. You can search whole words, words with prefixes, every form of a lexeme, or a pattern; limit the search to certain scrolls; leave out hits that rest on reconstructed text; and download the hits as a spreadsheet. The **Read** tab lets you open any manuscript and read it from beginning to end. The **Biblical parallels** tab shows a biblical chapter in every manuscript that has it, verse by verse in columns, and lists the pesharim and other texts that quote it. The **Statistics** tab counts: the most frequent words, how one word is spread over the scrolls, the words that occur near it, and the words that mark some scrolls out from the others. The same counts are available on the command line.
 
@@ -10,45 +10,56 @@ The text comes from the [CACCHT Dead Sea Scrolls dataset](https://github.com/ETC
 
 ### Download and run
 
-Get the file for your computer from the **Releases** page of this repository, unzip it, and start the program inside.
+Get the file for your computer from the **Releases** page of this repository, unzip it, and open the program. It opens a window with the search page; close the window to quit.
 
-| Your computer | File |
-| --- | --- |
-| Windows 10 or 11 | `dss-search-…-windows-x64.zip` (start `dss-search.exe`) |
-| Mac, Apple Silicon or Intel | `dss-search-…-macos.zip` (start `dss-search`) |
-| Linux, 64-bit Intel or AMD | `dss-search-…-linux-x64.tar.gz` (start `dss-search`) |
-| Linux, 64-bit ARM (for example a Raspberry Pi 4 or 5) | `dss-search-…-linux-arm64.tar.gz` (start `dss-search`) |
+| Your computer | File | Start |
+| --- | --- | --- |
+| Windows 10 or 11 | `dss-search-…-windows-x64.zip` | double-click `dss-search.exe` |
+| Mac, Apple Silicon or Intel (macOS 11 or newer) | `dss-search-…-macos.zip` | double-click **Dead Sea Scrolls Search** |
+| Linux, 64-bit Intel or AMD | `dss-search-…-linux-x64.tar.gz` | run `./dss-search` |
+| Linux, 64-bit ARM (for example a Raspberry Pi 4 or 5) | `dss-search-…-linux-arm64.tar.gz` | run `./dss-search` |
 
-A small window opens, saying `Serving at http://127.0.0.1:8000/`, and your browser opens on that address. **Close the window (or press Ctrl+C in it) to stop.** If you start it a second time while the first is still running, it uses the next free port and says which.
+The window shows the page with your operating system's own web view, so nothing has to be installed on **Windows 11, Windows 10 (up to date) or a Mac**. Two things to know:
 
-The program is not signed with a paid certificate, so the first time your system may warn you:
+- **Linux** needs the system's WebKitGTK library, which most desktop distributions already have. If the program says it cannot find `libwebkit2gtk-4.1`, install it once: `sudo apt install libwebkit2gtk-4.1-0` (Debian, Ubuntu, Mint), `sudo dnf install webkit2gtk4.1` (Fedora) or `sudo pacman -S webkit2gtk-4.1` (Arch). If the file will not start, make it executable first: `chmod +x dss-search`.
+- **Windows 10** machines that are not kept up to date can lack Microsoft's WebView2 component; the program then says so and where to get it (free, from Microsoft).
+
+The program is not signed with a paid certificate, so the first time your system may stop it:
 
 - **Windows** shows "Windows protected your PC". Click **More info**, then **Run anyway**.
-- **macOS** says the program "cannot be opened because the developer cannot be verified". Hold Control, click the file, choose **Open**, then **Open** again. (Or, in Terminal, once: `xattr -d com.apple.quarantine dss-search`.)
-- **Linux**: if the file will not start, make it executable first: `chmod +x dss-search`.
+- **macOS** says the application cannot be opened because the developer cannot be verified. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message (on macOS 14 and earlier you can instead Control-click the application and choose **Open**). Or, in Terminal, once: `xattr -dr com.apple.quarantine "Dead Sea Scrolls Search.app"`.
 
-Do not open `index.html` by double-clicking it. Browsers block a page from reading local data files, so the page needs the program, which serves it. The program listens on your own computer only (`127.0.0.1`); nobody else on your network can reach it.
+Downloaded files (the "Download as CSV" buttons) are saved through an ordinary **Save as** window, so you choose where they go.
 
-Options, if you start it from a terminal:
+Links that lead outside the program open in your normal browser. Nothing is sent anywhere: the program works offline, and its page is served to its own window from your computer only (`127.0.0.1`, a port the system picks, so it cannot clash with anything).
+
+### Other ways to run it
 
 ```
-dss-search                              # start and open the browser
-dss-search --port 9000                  # choose the port (default 8000, or the next free one)
-dss-search --no-browser                 # do not open a browser window
-dss-search --help                       # everything, including the command-line statistics
+dss-search                              # the window (this is what a double-click does)
+dss-search stats freq --top 20          # counts on the command line, no window (see Statistics)
+dss-search serve                        # no window: serve the page to a browser instead (--port 9000 to choose the port)
+dss-search --help                       # everything
 ```
+
+`serve` is for people who want to use a browser, who work on a computer without a screen, or who are changing the page. On a Mac the program inside the application is `Dead Sea Scrolls Search.app/Contents/MacOS/dss-search`.
 
 ### Build it yourself
 
-You need [Rust](https://rustup.rs) 1.85 or newer. Nothing else.
+You need [Rust](https://rustup.rs) 1.85 or newer. On Windows and macOS nothing else. On Linux you also need the development files of GTK and WebKitGTK:
+
+```
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev      # Debian, Ubuntu, Mint
+sudo dnf install webkit2gtk4.1-devel gtk3-devel          # Fedora
+```
 
 ```
 git clone <this repository>
 cd dss-hebrew-search
-cargo run --release                     # builds, starts the page, opens the browser
+cargo run --release                     # builds and opens the window
 ```
 
-`cargo build --release` leaves a single self-contained program in `target/release/` (about 10 MB, with the page and all the text inside it). Copy that one file anywhere.
+`cargo build --release` leaves a single self-contained program in `target/release/` (about 11 MB, with the page and all the text inside it). `cargo build --release --no-default-features` leaves a smaller one without the window (so without GTK and WebKitGTK) that does everything else: `serve`, `stats` and `build`.
 
 ## Using the search
 
@@ -240,6 +251,7 @@ The build reproduces the data in this repository exactly: CI rebuilds it from th
 ```
 cargo test --release                 # all of the Rust tests
 node --test                          # the page's own tests, if the repository has them (Node 18+)
+dss-search --check-window            # opens the window and checks that the page works in it
 DSS_TF_DIR=dss/tf/2.0.1 cargo test --release --test builder   # rebuild the data and compare
 ```
 
@@ -248,19 +260,22 @@ DSS_TF_DIR=dss/tf/2.0.1 cargo test --release --test builder   # rebuild the data
 | unit tests in `src/` | Hebrew helpers, scroll filters and ordering, segments, the `.tf` reader, table and CSV output, the data builder's helpers |
 | `tests/golden.rs` | 179 questions asked of the old Python/Polars version (`tests/golden.json`) must get the same answers |
 | `tests/page_agrees.rs` | `web/search.js` and the program agree on the Statistics tab's settings, defaults and columns (needs Node; skipped without it) |
-| `tests/server.rs` | starts the real program and talks HTTP to it: the page, the data, the API, errors, caching, several requests at once |
+| `tests/server.rs` | starts the real program (`serve`) and talks HTTP to it: the page, the data, the API, errors, caching, several requests at once |
+| unit tests in `src/window.rs` | what the page may send to the program, the window icon, that only web addresses are ever opened outside the program |
+| `tests/web/*.check.js` | the real page, in a simulated browser (jsdom) against a running `serve`: every Statistics analysis, suggestions, and that saving a CSV hands the file (with its byte-order mark) to the program but still downloads normally in a browser (run `npm install` in `tests/web` first) |
+| `--check-window` | opens the real window, waits until the page has loaded its data, shows a statistics table, and has an exchange with the program through the channel that saving uses; exit code 0 or 1. CI runs it on Linux (on a virtual screen), Windows and macOS |
 | `tests/bible.rs` | the quotation search reproduces `data/bible.json` from its verse segments |
 | `tests/builder.rs` | with `DSS_TF_DIR`, rebuilding from the dataset reproduces `data/dss.json` and `data/bible.json` |
 
-`tests/make_golden.py` makes `tests/golden.json` again from the old Python version, if you ever change what the analyses compute. The same tests run on Windows, macOS and Linux for every push (`.github/workflows/ci.yml`).
+`tests/make_golden.py` makes `tests/golden.json` again from the old Python version, if you ever change what the analyses compute. The same tests run on Windows, macOS and Linux for every push (`.github/workflows/ci.yml`), which also opens the window on each of them.
 
 ## Making a release
 
 1. Raise `version` in `Cargo.toml` and commit.
-2. `git tag v0.1.0 && git push origin v0.1.0` (the tag is `v` plus the version).
-3. GitHub Actions (`.github/workflows/release.yml`) builds the program for Windows, macOS (one file for Apple Silicon and Intel) and Linux (static, so it runs on any distribution; Intel/AMD and ARM), checks that each one starts, and publishes the downloads with `SHA256SUMS.txt` on the Releases page.
+2. `git tag v0.2.0 && git push origin v0.2.0` (the tag is `v` plus the version).
+3. GitHub Actions (`.github/workflows/release.yml`) builds the program for Windows, macOS (an application for Apple Silicon and Intel together) and Linux (Intel/AMD and ARM, built on Ubuntu 22.04 so that it runs on older distributions too), starts each one, and publishes the downloads with `SHA256SUMS.txt` on the Releases page.
 
-A signed Windows program and a notarised Mac program would remove the first-run warnings, but both need paid developer accounts, so they are not done.
+A signed Windows program and a notarised Mac application would remove the first-run warnings, but both need paid developer accounts, so they are not done.
 
 ## Files
 
@@ -268,7 +283,8 @@ A signed Windows program and a notarised Mac program would remove the first-run 
 | --- | --- |
 | `web/index.html`, `web/style.css`, `web/app.js` | the page (Search, Read, Biblical parallels and Statistics tabs) |
 | `web/search.js` | the search, reading, parallels and Statistics-settings logic, shared by the page and the tests |
-| `src/main.rs`, `src/commands.rs` | the command line (`dss-search`, `stats`, `build`) |
+| `src/main.rs`, `src/commands.rs` | the command line (`dss-search`, `serve`, `stats`, `build`) |
+| `src/window.rs` | the window: the system web view, the Save-as dialog, links, the Mac menu, `--check-window` |
 | `src/server.rs`, `src/assets.rs` | the local server, and the page and data built into the program |
 | `src/corpus.rs` | loads `dss.json` into the tables the statistics run on |
 | `src/stats.rs`, `src/query.rs` | the four analyses, and how the page's questions reach them |
@@ -277,7 +293,8 @@ A signed Windows program and a notarised Mac program would remove the first-run 
 | `src/download.rs` | fetches the dataset (only with `--features download`) |
 | `data/dss.json`, `data/bible.json` | the text and the biblical-parallels data (built; see Data and license) |
 | `data/scroll-names.json` | common names of scrolls, by hand |
-| `tests/` | tests |
+| `assets/icon.png`, `assets/icon-256.png` | the application icon (the larger one makes the Mac icon; the smaller one is built into the program) |
+| `tests/` | tests (`tests/web/` holds the ones that need Node) |
 | `.github/workflows/` | tests on every push; builds the downloads when a version is tagged |
 
 ## Ideas for improvement
@@ -301,6 +318,7 @@ A signed Windows program and a notarised Mac program would remove the first-run 
 - A workflow that rebuilds the data when ETCBC/dss changes.
 - Compile the statistics to WebAssembly (the library is already free of operating-system code) so that the whole tool runs from a web page, for example on GitHub Pages, with no download at all.
 - Signed and notarised downloads, so that Windows and macOS do not warn on first run.
+- An AppImage or Flatpak for Linux that carries WebKitGTK with it, so that Linux needs no system package either.
 
 ## Credits
 

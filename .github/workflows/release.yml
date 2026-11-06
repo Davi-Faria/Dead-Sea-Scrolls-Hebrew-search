@@ -8,7 +8,7 @@ name: Release
 
 on:
   push:
-    tags: ["v0.4.4"]
+    tags: ["v*"]
   workflow_dispatch:
 
 env:
