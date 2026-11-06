@@ -19,23 +19,73 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      - name: The window needs these libraries to compile on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Node is only used by two checks: the page's own tests, and that the page and the program agree.
+      # Node is only used by the check that the page and the program agree
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Tests (Rust)
-        run: cargo test --release
-      - name: Tests (JavaScript)
-        run: node --test
-        continue-on-error: true # there may be no tests/*.test.js in this repository yet
+      - name: Tests
+        run: cargo test --locked
+
+  window:
+    name: The window works (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    # macOS runners may not allow a window to open; this shows what happens without stopping the rest
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Libraries and a virtual screen (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked
+      # Opens the real window, waits for the page to load its data, shows a statistics table and has
+      # an exchange with the program through the channel that saving files uses.
+      - name: Open the window and check the page in it (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ./target/debug/dss-search --check-window
+      - name: Open the window and check the page in it
+        if: runner.os != 'Linux'
+        shell: bash
+        run: ./target/debug/dss-search --check-window
+
+  page:
+    name: The page, in a simulated browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # no window libraries needed: only the server is used here
+      - run: cargo build --locked --no-default-features
+      - name: Install the simulated browser
+        run: npm install
+        working-directory: tests/web
+      - name: Check the page against the program
+        run: |
+          ./target/debug/dss-search serve --port 8199 &
+          sleep 5
+          node tests/web/pages.check.js 8199
+          node tests/web/save.check.js 8199
 
   lint:
     name: Format and lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
       # a fixed version, so that a new release of Rust does not change what "formatted" means
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -54,11 +104,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # no window libraries needed: only the data builder is used here
       - name: Download the dataset and build the data again
-        run: cargo run --release --features download -- build --out rebuilt/dss.json
+        run: cargo run --release --locked --no-default-features --features download -- build --out rebuilt/dss.json
       - name: It must be exactly what is in data/
         run: |
           cmp rebuilt/dss.json data/dss.json
           cmp rebuilt/bible.json data/bible.json
       - name: The rebuild test (compares field by field)
-        run: DSS_TF_DIR=.cache/dss-tf/2.0.1 cargo test --release --test builder
+        run: DSS_TF_DIR=.cache/dss-tf/2.0.1 cargo test --release --locked --no-default-features --test builder

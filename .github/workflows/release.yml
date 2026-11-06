@@ -1,14 +1,14 @@
 # Builds the program for Windows, macOS and Linux and puts the downloads on a GitHub release.
 #
 #   1. Raise `version` in Cargo.toml and commit.
-#   2. git tag v0.1.0 && git push origin v0.1.0     (the tag must be "v" + the version)
+#   2. git tag v0.2.0 && git push origin v0.2.0     (the tag must be "v" + the version)
 #   3. Wait a few minutes: the release appears under "Releases" with the files and checksums.
 
 name: Release
 
 on:
   push:
-    tags: ["v0.4.3"]
+    tags: ["v*"]
   workflow_dispatch:
 
 env:
@@ -44,8 +44,9 @@ jobs:
         include:
           - { name: windows-x64, os: windows-latest, targets: x86_64-pc-windows-msvc }
           - { name: macos, os: macos-latest, targets: "aarch64-apple-darwin x86_64-apple-darwin" }
-          - { name: linux-x64, os: ubuntu-latest, targets: x86_64-unknown-linux-musl }
-          - { name: linux-arm64, os: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl }
+          # Built on an older system (Ubuntu 22.04) so that it also runs on older distributions
+          - { name: linux-x64, os: ubuntu-22.04, targets: x86_64-unknown-linux-gnu }
+          - { name: linux-arm64, os: ubuntu-22.04-arm, targets: aarch64-unknown-linux-gnu }
     env:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
@@ -54,9 +55,9 @@ jobs:
       - name: Add the targets
         shell: bash
         run: for t in ${{ matrix.targets }}; do rustup target add "$t"; done
-      - name: Tools for static Linux builds
+      - name: Libraries for the window, and a virtual screen to test it (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev xvfb
       - name: Build
         shell: bash
         run: for t in ${{ matrix.targets }}; do cargo build --release --locked --target "$t"; done
@@ -73,31 +74,70 @@ jobs:
               cp "target/x86_64-pc-windows-msvc/release/dss-search.exe" "$dir/"
               7z a -tzip "$dir.zip" "$dir" >/dev/null
               echo "ASSET=$dir.zip" >> "$GITHUB_ENV"
+              echo "BIN=$dir/dss-search.exe" >> "$GITHUB_ENV"
               ;;
             macos)
-              # one program that runs on both Apple Silicon and Intel Macs
-              lipo -create -output "$dir/dss-search" \
+              # An application that opens with a double-click: one program for Apple Silicon and Intel Macs
+              app="$dir/Dead Sea Scrolls Search.app"
+              mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+              lipo -create -output "$app/Contents/MacOS/dss-search" \
                 target/aarch64-apple-darwin/release/dss-search target/x86_64-apple-darwin/release/dss-search
-              codesign --force --sign - "$dir/dss-search"   # ad hoc: Apple Silicon refuses unsigned programs
-              chmod +x "$dir/dss-search"
-              zip -r -y "$dir.zip" "$dir" >/dev/null
+              mkdir icon.iconset
+              for s in 16 32 128 256 512; do
+                sips -z $s $s assets/icon.png --out "icon.iconset/icon_${s}x${s}.png" >/dev/null
+                sips -z $((s * 2)) $((s * 2)) assets/icon.png --out "icon.iconset/icon_${s}x${s}@2x.png" >/dev/null
+              done
+              iconutil -c icns icon.iconset -o "$app/Contents/Resources/icon.icns"
+              cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Dead Sea Scrolls Search</string>
+            <key>CFBundleDisplayName</key><string>Dead Sea Scrolls Search</string>
+            <key>CFBundleIdentifier</key><string>io.github.davi-faria.dss-search</string>
+            <key>CFBundleExecutable</key><string>dss-search</string>
+            <key>CFBundleIconFile</key><string>icon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+              # ad hoc signature: Apple Silicon refuses to start a program with none
+              codesign --force --deep --sign - "$app"
+              ditto -c -k --sequesterRsrc --keepParent "$dir" "$dir.zip"
               echo "ASSET=$dir.zip" >> "$GITHUB_ENV"
+              echo "BIN=$app/Contents/MacOS/dss-search" >> "$GITHUB_ENV"
               ;;
             *)
               t="${{ matrix.targets }}"
               cp "target/$t/release/dss-search" "$dir/"
+              cp assets/icon.png "$dir/dss-search.png"
               chmod +x "$dir/dss-search"
               tar -czf "$dir.tar.gz" "$dir"
               echo "ASSET=$dir.tar.gz" >> "$GITHUB_ENV"
+              echo "BIN=$dir/dss-search" >> "$GITHUB_ENV"
               ;;
           esac
+
       - name: A quick look that the program starts
         shell: bash
         run: |
-          dir="dss-search-${VERSION}-${{ matrix.name }}"
-          bin="$dir/dss-search"; [ -f "$dir/dss-search.exe" ] && bin="$dir/dss-search.exe"
-          "$bin" --version
-          "$bin" stats freq --top 3
+          "$BIN" --version
+          "$BIN" stats freq --top 3
+      # Opens the real window and checks that the page works in it. A problem here is shown but does
+      # not stop the release, because a runner without a screen is not a problem with the program.
+      - name: Open the window and check the page in it
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a "$BIN" --check-window; else "$BIN" --check-window; fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
