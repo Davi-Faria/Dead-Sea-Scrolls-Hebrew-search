@@ -131,7 +131,8 @@ fn handle(state: &State, request: Request) {
     }
 }
 
-/// Listen on the wanted port; without one, the first free port from 8000 and, failing that, any.
+/// Listen on the wanted port (0 lets the operating system pick a free one); without one, the
+/// first free port from 8000 and, failing that, any.
 fn bind(port: Option<u16>) -> Result<Server, String> {
     let try_port = |p: u16| Server::http(("127.0.0.1", p));
     match port {
@@ -148,7 +149,24 @@ fn bind(port: Option<u16>) -> Result<Server, String> {
     }
 }
 
-pub fn run(sources: Sources, port: Option<u16>, open_browser: bool) -> Result<(), String> {
+/// A server that is answering requests on background threads.
+pub struct Started {
+    /// the address of the page, for example `http://127.0.0.1:8000/`
+    pub url: String,
+    workers: Vec<thread::JoinHandle<()>>,
+}
+
+impl Started {
+    /// Wait for as long as the server runs (that is, until the program is stopped).
+    pub fn wait(self) {
+        for worker in self.workers {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Load the data and start answering requests. Returns as soon as the server is listening.
+pub fn start(sources: Sources, port: Option<u16>) -> Result<Started, String> {
     for path in sources.describe_overrides() {
         println!("Using {path} instead of the built-in copy.");
     }
@@ -160,16 +178,7 @@ pub fn run(sources: Sources, port: Option<u16>, open_browser: bool) -> Result<()
     let etags = ASSETS.iter().map(|a| (a.route, format!("\"{:016x}-{}\"", fingerprint(a.bytes), env!("CARGO_PKG_VERSION")))).collect();
     let state = Arc::new(State { corpus, sources, etags });
     let server = Arc::new(server);
-
-    println!("Dead Sea Scrolls Hebrew search {}", env!("CARGO_PKG_VERSION"));
-    println!("Serving at {url}  (press Ctrl+C to stop)");
-    if open_browser {
-        if open::that_detached(&url).is_err() {
-            println!("Could not open a browser by itself. Open the address above in your browser.");
-        }
-    }
-
-    let workers: Vec<_> = (0..WORKERS)
+    let workers = (0..WORKERS)
         .map(|_| {
             let (server, state) = (Arc::clone(&server), Arc::clone(&state));
             thread::spawn(move || {
@@ -179,8 +188,14 @@ pub fn run(sources: Sources, port: Option<u16>, open_browser: bool) -> Result<()
             })
         })
         .collect();
-    for worker in workers {
-        let _ = worker.join();
-    }
+    Ok(Started { url, workers })
+}
+
+/// `dss-search serve`: answer requests until stopped, with no window (for use from any browser).
+pub fn run(sources: Sources, port: Option<u16>) -> Result<(), String> {
+    let started = start(sources, port)?;
+    println!("Dead Sea Scrolls Hebrew search {}", env!("CARGO_PKG_VERSION"));
+    println!("Serving at {}  (press Ctrl+C to stop)", started.url);
+    started.wait();
     Ok(())
 }
