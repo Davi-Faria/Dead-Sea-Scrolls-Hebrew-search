@@ -77,7 +77,7 @@
   function load() {
     setEnabled(false);
     if (location.protocol === 'file:') {
-      setStatus('This page cannot read its data when opened as a file. Start the dss-search program and use the address it prints.', true);
+      setStatus('This page cannot read its data when opened as a file. Start the dss-search program, which opens it in its own window.', true);
       return;
     }
     fetchJSON('data/dss.json')
@@ -103,7 +103,7 @@
         route();
       })
       .catch(function (error) {
-        setStatus('Could not load data/dss.json (' + error.message + '). Make sure the dss-search program is still running, then reload the page.', true);
+        setStatus('Could not load data/dss.json (' + error.message + '). Close the window and start the dss-search program again.', true);
       });
   }
 
@@ -400,8 +400,17 @@
     showMore();
   }
 
+  // In the program's own window there is no download manager. The file is handed to the program
+  // instead, which asks where to save it. In an ordinary browser the usual download is used.
+  function saveThroughProgram(filename, text) {
+    if (!(window.ipc && typeof window.ipc.postMessage === 'function')) return false;
+    window.ipc.postMessage(JSON.stringify({ type: 'save', filename: filename, text: text }));
+    return true;
+  }
+
   function downloadCSV() {
     var csv = DSSSearch.toCSV(data, index, current.hits, current.contextWords);
+    if (saveThroughProgram('dss-search.csv', csv)) return;
     var url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     var link = document.createElement('a');
     link.href = url;
@@ -1219,7 +1228,7 @@
     var program = document.createElement('code');
     program.textContent = 'dss-search';
     els.stNotice.appendChild(program);
-    els.stNotice.appendChild(document.createTextNode(' (double-click it, or run it in a terminal) and use the address it prints, rather than opening a saved copy of this page. Searching, reading and the parallels do not need it.'));
+    els.stNotice.appendChild(document.createTextNode(' (it opens this page in its own window) rather than opening a saved copy of the page. Searching, reading and the parallels do not need it.'));
     els.stNotice.hidden = false;
   }
 
@@ -1350,6 +1359,21 @@
   els.form.addEventListener('submit', function (event) { event.preventDefault(); runSearch(); });
   els.more.addEventListener('click', showMore);
   els.csv.addEventListener('click', downloadCSV);
+  els.stCsv.addEventListener('click', function (event) {
+    if (!(window.ipc && typeof window.ipc.postMessage === 'function')) return; // a browser downloads the link itself
+    event.preventDefault();
+    var href = els.stCsv.href;
+    var name = 'dss-' + ((/api\/stats\/([a-z]+)/.exec(href) || [])[1] || 'statistics') + '.csv';
+    fetch(href).then(function (response) {
+      if (!response.ok) throw new Error('The program answered ' + response.status + '.');
+      return response.arrayBuffer();
+    }).then(function (bytes) {
+      // keep the byte-order mark (text() would drop it), so that Excel reads the Hebrew
+      saveThroughProgram(name, new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes));
+    }).catch(function (error) {
+      setStStatus('Could not make the file: ' + error.message, true);
+    });
+  });
 
   load();
 }());
